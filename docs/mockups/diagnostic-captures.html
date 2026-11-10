@@ -1,0 +1,379 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Diagnostic captures in Settings</title></head>
+<body>
+<style>
+@font-face { font-family: 'Game Seurat'; src: url('assets/ninP_SeuratCapie-B_003.woff2') format('woff2'); font-weight: 400 600; font-display: block; }
+@font-face { font-family: 'Game Seurat'; src: url('assets/ninP_SeuratCapie-EB_003.woff2') format('woff2'); font-weight: 700 900; font-display: block; }
+#capture-proposal { --game-yellow: #ffc100; --game-ink: #002240; --game-white: #fff; --game-cloud: #ffd97f; color: var(--game-ink); font: 400 16px/1.5 'Game Seurat', sans-serif; }
+#capture-proposal * { box-sizing: border-box; }
+#capture-proposal [hidden] { display: none !important; }
+#capture-proposal button, #capture-proposal input, #capture-proposal textarea { font: inherit; }
+#capture-proposal button:focus-visible, #capture-proposal input:focus-visible, #capture-proposal textarea:focus-visible, #capture-proposal summary:focus-visible { outline: 3px solid var(--game-ink); outline-offset: 4px; }
+#capture-proposal h2, #capture-proposal h3, #capture-proposal p { margin: 0; }
+#capture-proposal h2 { font-size: 27px; line-height: 1.3; font-weight: 700; }
+#capture-proposal h3 { font-size: 20px; font-weight: 700; }
+#capture-proposal strong { font-weight: 700; }
+#capture-proposal .small { font-size: 13px; }
+#capture-proposal .stack { display: grid; gap: 7px; }
+#capture-proposal .preview-nav { display: flex; align-items: center; flex-wrap: wrap; gap: 18px; padding-right: 80px; margin-bottom: 14px; color: var(--foreground); font: 400 13px/1.4 -apple-system, BlinkMacSystemFont, sans-serif; }
+#capture-proposal .preview-nav button { background: none; border: 0; color: inherit; padding: 8px 0; font: inherit; min-height: 36px; }
+#capture-proposal .preview-nav button[aria-pressed='true'] { text-decoration: underline; text-underline-offset: 7px; text-decoration-thickness: 2px; }
+#capture-proposal .preview-demo { display: inline-flex; align-items: center; gap: 7px; margin-left: auto; }
+#capture-proposal .preview-demo input { accent-color: #ff8000; }
+#capture-proposal .stage { position: relative; isolation: isolate; background: var(--game-yellow); color-scheme: light; }
+#capture-proposal .game-base { position: relative; min-height: 565px; }
+#capture-proposal .game { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+#capture-proposal .capture-control { position: absolute !important; top: 74px; left: 50%; transform: translateX(-50%); width: 178px; padding-left: 18px; padding-right: 18px; font-size: 15px; white-space: nowrap; }
+#capture-proposal .home-hotspot { position: absolute; left: 42%; bottom: 0; width: 12%; height: 11%; border: 0; background: transparent; }
+#capture-proposal .key { --key-face: #fff; --key-lip: #e5e5e5; position: relative; isolation: isolate; display: inline-flex; align-items: center; justify-content: center; min-height: 54px; padding: 11px 25px 15px; color: var(--game-ink); border: 0; background: none; font-weight: 700; text-align: center; }
+#capture-proposal .key.main { --key-face: #ff8000; --key-lip: #d96a00; color: var(--game-white); }
+#capture-proposal .key.picked { --key-face: #ffe353; --key-lip: #ecc23a; }
+#capture-proposal .key:disabled { opacity: .5; }
+#capture-proposal .key-art { position: absolute; inset: 0; z-index: -1; pointer-events: none; }
+#capture-proposal .key-art > span { position: absolute; inset: 0; clip-path: var(--key-outline); }
+#capture-proposal .key-drop { background: #e7ae00; transform: translateY(8px); }
+#capture-proposal .key-lip { background: var(--key-lip); transform: translateY(4px); }
+#capture-proposal .key-face { background: var(--key-face); }
+#capture-proposal .key-waves { display: none; width: 100%; height: 100%; }
+#capture-proposal .picked .key-waves { display: block; }
+#capture-proposal .key-label { position: relative; transform: translateY(-4px); }
+#capture-proposal button.key:active .key-face { transform: translateY(4px); }
+#capture-proposal button.key:active .key-label { transform: none; }
+#capture-proposal .settings-base { position: relative; padding: 24px 28px 82px; min-height: 565px; isolation: isolate; }
+#capture-proposal .settings-wave { position: absolute; left: 0; right: 0; bottom: 0; width: 100%; height: 90px; object-fit: fill; z-index: -1; pointer-events: none; }
+#capture-proposal .settings-header { position: relative; display: flex; align-items: flex-start; justify-content: flex-end; min-height: 67px; margin-bottom: 9px; }
+#capture-proposal .settings-header h2 { position: absolute; left: 50%; top: 7px; transform: translateX(-50%); }
+#capture-proposal .settings-header .key { min-width: 124px; }
+#capture-proposal .settings-tabs { display: grid; grid-template-columns: repeat(5,minmax(0,1fr)); gap: 10px; padding-bottom: 21px; border-bottom: 2.5px dashed #ffa100; }
+#capture-proposal .settings-tabs .key { padding-left: 8px; padding-right: 8px; font-size: 15px; min-height: 55px; }
+#capture-proposal .settings-pane { padding-top: 23px; }
+#capture-proposal .settings-pane > section + section { margin-top: 26px; }
+#capture-proposal .section-title { margin-bottom: 15px; }
+#capture-proposal .recorder-toggle { display: flex; gap: 18px; align-items: center; justify-content: space-between; margin-bottom: 19px; }
+#capture-proposal .option-pair { display: flex; gap: 10px; }
+#capture-proposal .option-pair .key { min-width: 82px; }
+#capture-proposal .numeric-settings { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 20px; }
+#capture-proposal .numeric-field { display: flex; align-items: center; gap: 12px; justify-content: space-between; }
+#capture-proposal .amount { display: inline-flex; align-items: center; justify-content: center; gap: 6px; flex: 0 0 116px; padding: 11px 12px; background: var(--game-white); border-radius: 24px; box-shadow: 0 4px 0 #e5e5e5; font-size: 22px; font-weight: 700; }
+#capture-proposal .amount .unit { font-size: 16px; }
+#capture-proposal .numeric-field .amount input { width: 3ch; min-width: 0; flex: none; text-align: right; font-size: inherit; font-weight: inherit; padding: 0; border-radius: 0; background: none; box-shadow: none; appearance: textfield; }
+#capture-proposal .amount input::-webkit-inner-spin-button, #capture-proposal .amount input::-webkit-outer-spin-button { appearance: none; margin: 0; }
+#capture-proposal input[type='number'], #capture-proposal textarea { border: 0; border-radius: 24px; padding: 11px 14px; background: var(--game-white); color: var(--game-ink); box-shadow: 0 4px 0 #e5e5e5; }
+#capture-proposal textarea { width: 100%; font-size: 16px; min-height: 78px; resize: vertical; }
+#capture-proposal textarea::placeholder { color: #737d86; }
+#capture-proposal .reports-heading { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 7px; margin-bottom: 14px; }
+#capture-proposal .report-list { display: grid; gap: 14px; }
+#capture-proposal .report { --key-face: #fff; --key-lip: #e5e5e5; position: relative; isolation: isolate; display: grid; grid-template-columns: 23px 74px minmax(0,1fr) auto; align-items: center; gap: 12px; padding: 18px 22px 26px; }
+#capture-proposal .report-check { width: 22px; height: 22px; accent-color: #ff8000; }
+#capture-proposal .thumb { width: 74px; height: 56px; object-fit: cover; border: 4px solid var(--game-white); box-shadow: 0 3px 0 #0002; }
+#capture-proposal .report-info { min-width: 0; display: grid; gap: 5px; }
+#capture-proposal .report-title { border: 0; background: none; color: var(--game-ink); font-weight: 700; text-align: left; padding: 0; overflow-wrap: anywhere; }
+#capture-proposal .report .key { padding-left: 15px; padding-right: 15px; min-height: 46px; }
+#capture-proposal .report-actions { margin-top: 17px; }
+#capture-proposal .actions { display: flex; flex-wrap: wrap; gap: 12px; justify-content: flex-end; }
+#capture-proposal .actions .main { flex-grow: 1; }
+#capture-proposal .option-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 14px; margin: 12px 0 22px; }
+#capture-proposal .language-grid { grid-template-columns: repeat(3,minmax(0,1fr)); }
+#capture-proposal .language-grid .key { font-size: 14px; padding-left: 12px; padding-right: 12px; }
+#capture-proposal .modal-layer { position: absolute; inset: 0; z-index: 10; display: grid; place-items: center; background: #0005; }
+#capture-proposal .modal-view { width: 100%; display: grid; place-items: center; padding: 22px 10px; }
+#capture-proposal .dialog { position: relative; isolation: isolate; width: min(100%,650px); padding: 48px 65px 60px; display: grid; gap: 15px; color: #00040d; }
+#capture-proposal .dialog::before { content: ''; position: absolute; inset: 0; z-index: -1; background: var(--game-cloud) url('assets/dialog-pattern.png') center / 310px 310px repeat; mask: url('assets/DialogCloud_00.png') center / 100% 100% no-repeat; mask-mode: luminance; }
+#capture-proposal .dialog .key.main { --key-face: #ff3700; --key-lip: #cd2b00; }
+#capture-proposal .dialog .actions .key { flex: 1 1 100px; padding-left: 18px; padding-right: 18px; }
+#capture-proposal .capture-summary { display: grid; grid-template-columns: 120px minmax(0,1fr); gap: 22px; align-items: center; }
+#capture-proposal .capture-summary .thumb { width: 120px; height: 90px; }
+#capture-proposal .field { display: grid; gap: 8px; font-weight: 700; }
+#capture-proposal .dialog--full { text-align: center; gap: 19px; }
+#capture-proposal .full-numbers { display: grid; gap: 6px; }
+#capture-proposal #full-usage { font-size: 20px; }
+#capture-proposal .detail-summary { display: grid; grid-template-columns: 100px minmax(0,1fr); gap: 18px; align-items: center; }
+#capture-proposal .detail-summary .thumb { width: 100px; height: 75px; }
+#capture-proposal .dialog--delete { text-align: center; }
+#capture-proposal .status-line { margin-top: 12px; min-height: 22px; color: var(--foreground); font: 400 13px/1.5 -apple-system, BlinkMacSystemFont, sans-serif; }
+@media (max-width: 540px) {
+  #capture-proposal .preview-nav { padding-right: 0; gap: 15px; }
+  #capture-proposal .preview-demo { margin-left: 0; }
+  #capture-proposal .settings-base { padding-left: 20px; padding-right: 20px; }
+  #capture-proposal .settings-header { justify-content: space-between; align-items: center; }
+  #capture-proposal .settings-header h2 { position: static; transform: none; }
+  #capture-proposal .settings-header .key { min-width: 112px; }
+  #capture-proposal .settings-tabs { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  #capture-proposal .settings-tabs .key:last-child { grid-column: 1 / -1; }
+  #capture-proposal .numeric-settings { grid-template-columns: 1fr; gap: 16px; }
+  #capture-proposal .option-pair .key { min-width: 60px; padding-left: 15px; padding-right: 15px; }
+  #capture-proposal .report { grid-template-columns: 22px minmax(0,1fr) auto; gap: 10px; padding-left: 22px; padding-right: 20px; }
+  #capture-proposal .report > .thumb { display: none; }
+  #capture-proposal .language-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  #capture-proposal .modal-view { padding: 20px 4px; }
+  #capture-proposal .dialog { padding: 41px 32px 52px; gap: 14px; }
+  #capture-proposal h2 { font-size: 23px; }
+  #capture-proposal .capture-summary { grid-template-columns: 74px minmax(0,1fr); gap: 14px; }
+  #capture-proposal .capture-summary .thumb { width: 74px; height: 56px; }
+  #capture-proposal .capture-summary h2 { font-size: 21px; }
+  #capture-proposal .capture-summary p { font-size: 14px; }
+  #capture-proposal .dialog .actions .key { padding-left: 13px; padding-right: 13px; font-size: 15px; }
+  #capture-proposal .detail-summary { grid-template-columns: 74px minmax(0,1fr); gap: 13px; }
+  #capture-proposal .detail-summary .thumb { width: 74px; height: 56px; }
+}
+</style>
+
+<div id="capture-proposal" aria-label="Diagnostic captures in the existing settings shell">
+  <nav class="preview-nav" aria-label="Preview controls">
+    <button type="button" data-view="game" aria-pressed="true">Gameplay</button>
+    <button type="button" data-view="settings" aria-pressed="false">Settings</button>
+    <label class="preview-demo"><input type="checkbox" id="demo-full">Fill report storage (demo)</label>
+  </nav>
+  <div class="stage">
+    <section class="game-base" data-base="game" aria-label="Gameplay with on-screen report capture">
+      <img class="game" src="assets/gameplay.jpg" alt="Your island screenshot">
+      <button class="key capture-control" type="button" data-action="capture">Capture report</button>
+      <button class="home-hotspot" type="button" data-action="open-settings" aria-label="HOME: open settings" data-tooltip="Open settings"></button>
+    </section>
+
+    <section class="settings-base" data-base="settings" aria-label="Settings" hidden>
+      <img class="settings-wave" src="assets/settings-wave.png" alt="" aria-hidden="true">
+      <header class="settings-header"><h2>Settings</h2><button class="key main" type="button" data-action="resume">Resume</button></header>
+      <nav class="settings-tabs" role="tablist" aria-label="Settings pages">
+        <button class="key" type="button" role="tab" id="tab-language" data-tab="language" aria-controls="pane-language" aria-selected="false">Language</button>
+        <button class="key" type="button" role="tab" id="tab-display" data-tab="display" aria-controls="pane-display" aria-selected="false">Display</button>
+        <button class="key" type="button" role="tab" id="tab-controls" data-tab="controls" aria-controls="pane-controls" aria-selected="false">Controls</button>
+        <button class="key" type="button" role="tab" id="tab-save" data-tab="save" aria-controls="pane-save" aria-selected="false">Save Data</button>
+        <button class="key picked" type="button" role="tab" id="tab-diagnostics" data-tab="diagnostics" aria-controls="pane-diagnostics" aria-selected="true">Diagnostics</button>
+      </nav>
+
+      <div class="settings-pane" id="pane-diagnostics" data-pane="diagnostics" role="tabpanel" aria-labelledby="tab-diagnostics">
+        <section aria-labelledby="recorder-heading">
+          <h3 class="section-title" id="recorder-heading">Recorder</h3>
+          <div class="recorder-toggle"><span>Record recent history</span><div class="option-pair" role="group" aria-label="Record recent history"><button class="key picked" type="button" data-recorder="on" aria-pressed="true">On</button><button class="key" type="button" data-recorder="off" aria-pressed="false">Off</button></div></div>
+          <div class="recorder-toggle"><span>On-screen capture button</span><div class="option-pair" role="group" aria-label="On-screen capture button"><button class="key picked" type="button" data-capture-button="show" aria-pressed="true">Show</button><button class="key" type="button" data-capture-button="hide" aria-pressed="false">Hide</button></div></div>
+          <div class="numeric-settings">
+            <label class="numeric-field" for="history-length"><span>History</span><span class="amount"><input id="history-length" type="number" min="10" max="300" step="10" required value="60" aria-label="History in seconds"><span class="unit" aria-hidden="true">s</span></span></label>
+            <label class="numeric-field" for="storage-limit"><span>Report storage limit</span><span class="amount"><input id="storage-limit" type="number" min="5" max="500" step="5" required value="50" aria-label="Report storage limit in megabytes"><span class="unit" aria-hidden="true">MB</span></span></label>
+          </div>
+        </section>
+        <section aria-labelledby="reports-heading">
+          <div class="reports-heading"><h3 id="reports-heading">Saved reports</h3><span class="small" id="report-usage">5.2 / 50 MB used</span></div>
+          <div class="report-list" id="report-list"></div>
+          <div class="actions report-actions"><button class="key" type="button" data-action="delete-selected">Delete selected</button><button class="key main" type="button" data-action="share-selected">Share selected</button></div>
+        </section>
+      </div>
+
+      <div class="settings-pane" id="pane-language" data-pane="language" role="tabpanel" aria-labelledby="tab-language" hidden><h3>Game Language</h3><div class="option-grid language-grid" data-options="language"><button class="key" type="button">Same as iPad</button><button class="key picked" type="button">English (US)</button><button class="key" type="button">English (UK)</button><button class="key" type="button">Français</button><button class="key" type="button">Français (Canada)</button><button class="key" type="button">Español (España)</button><button class="key" type="button">Español (Latinoamérica)</button><button class="key" type="button">Deutsch</button><button class="key" type="button">Italiano</button><button class="key" type="button">Nederlands</button><button class="key" type="button">日本語</button><button class="key" type="button">한국어</button><button class="key" type="button">簡體中文</button><button class="key" type="button">繁體中文</button></div></div>
+      <div class="settings-pane" id="pane-display" data-pane="display" role="tabpanel" aria-labelledby="tab-display" hidden><h3>Aspect Ratio</h3><div class="option-grid" data-options="aspect"><button class="key picked" type="button">Fill the Screen</button><button class="key" type="button">16:9</button></div><h3>MetalFX Upscaling</h3><div class="option-grid" data-options="upscale"><button class="key picked" type="button">On</button><button class="key" type="button">Off</button></div><h3>Frame Rate</h3><div class="option-grid" data-options="fps"><button class="key picked" type="button">30 FPS</button><button class="key" type="button">60 FPS</button></div></div>
+      <div class="settings-pane" id="pane-controls" data-pane="controls" role="tabpanel" aria-labelledby="tab-controls" hidden><h3>On-Screen Buttons</h3><div class="option-grid" data-options="buttons"><button class="key picked" type="button">Show</button><button class="key" type="button">Hide</button></div><h3>Button Opacity</h3><div class="option-grid" data-options="opacity"><button class="key" type="button">40%</button><button class="key picked" type="button">60%</button><button class="key" type="button">80%</button><button class="key" type="button">100%</button></div></div>
+      <div class="settings-pane" id="pane-save" data-pane="save" role="tabpanel" aria-labelledby="tab-save" hidden><h3>Backups</h3><div class="option-grid"><button class="key" type="button" data-action="sample-save">Back Up Now</button><button class="key" type="button" data-action="sample-save">Export to Files</button></div><h3>Restore a Backup</h3><p class="small">No backups yet.</p><h3 style="margin-top:24px">Start Over</h3><div class="option-grid"><button class="key" type="button" data-action="sample-save">Start Over…</button></div></div>
+    </section>
+
+    <div class="modal-layer" id="modal-layer" hidden>
+      <section class="modal-view" data-modal="capture" hidden><div class="dialog" role="dialog" aria-modal="true" aria-labelledby="capture-heading"><div class="capture-summary"><img class="thumb" data-game-thumbnail alt="Screenshot included in this report"><div class="stack"><h2 id="capture-heading">What happened?</h2><p>The last <strong data-history>60 seconds</strong> are captured.</p></div></div><label class="field" for="capture-note">Note (optional)<textarea id="capture-note" maxlength="2000" placeholder="The sound crackled when I opened the shop."></textarea></label><div class="actions"><button class="key" type="button" data-action="discard-capture">Discard</button><button class="key main" type="button" data-action="save-capture">Save report</button></div></div></section>
+      <section class="modal-view" data-modal="full" hidden><div class="dialog dialog--full" role="dialog" aria-modal="true" aria-labelledby="full-heading"><h2 id="full-heading">Storage is full</h2><div class="full-numbers"><strong id="full-usage">49.2 / 50 MB used</strong><p class="small" id="full-needed">This capture needs about 1.8 MB.</p></div><p>Your capture is held in memory.<br>Free some space or raise the limit.</p><div class="actions"><button class="key" type="button" data-action="change-limit">Change limit</button><button class="key main" type="button" data-action="manage-reports">Manage reports</button></div><button class="key" type="button" data-action="discard-capture">Discard this capture</button></div></section>
+      <section class="modal-view" data-modal="detail" hidden><div class="dialog" role="dialog" aria-modal="true" aria-labelledby="detail-heading"><div class="detail-summary"><img class="thumb" data-game-thumbnail alt="Saved report screenshot"><div class="stack"><h2 id="detail-heading">Report</h2><p class="small" id="detail-facts"></p></div></div><label class="field" for="detail-note">Note<textarea id="detail-note" maxlength="2000"></textarea></label><div class="actions"><button class="key" type="button" data-action="close-detail">Done</button><button class="key main" type="button" data-action="share-detail">Share</button><button class="key" type="button" data-action="delete-detail">Delete</button></div></div></section>
+      <section class="modal-view" data-modal="delete" hidden><div class="dialog dialog--delete" role="dialog" aria-modal="true" aria-labelledby="delete-heading"><h2 id="delete-heading">Delete these reports?</h2><p id="delete-summary"></p><p class="small">Your game and saves are not affected.</p><div class="actions"><button class="key" type="button" data-action="cancel-delete">Keep reports</button><button class="key main" type="button" data-action="confirm-delete">Delete reports</button></div></div></section>
+    </div>
+  </div>
+  <p class="status-line" role="status" aria-live="polite" id="proposal-status">Preview only · sample data. Nothing is recorded or shared.</p>
+</div>
+<script>
+(() => {
+  // 這個預覽只變更示範資料，不讀取遊戲、不記錄、不上傳。
+  // This preview changes sample data only; it does not read the game, record, or upload.
+  const root = document.getElementById('capture-proposal');
+  const q = s => root.querySelector(s), qa = s => [...root.querySelectorAll(s)];
+  const image = q('.game').getAttribute('src');
+  qa('[data-game-thumbnail]').forEach(el => { el.src = image; });
+    // 直接移植原生面板的膠囊曲線；不把對話框貼圖拉長當成選單按鍵。
+  // Port the native panel's capsule curves; do not stretch dialog textures into menu buttons.
+  const watchedKeys = new Set();
+  function drawKey(el) {
+    const w = el.getBoundingClientRect().width, h = el.getBoundingClientRect().height - 8;
+    if (w <= 0 || h <= 0) return;
+    const rr = h / 2;
+    el.style.setProperty('--key-outline', `path("M ${rr} 0 C ${w*.36} ${-h*.05} ${w*.64} ${h*.04} ${w-rr} 0 A ${rr} ${rr} 0 0 1 ${w-rr} ${h} C ${w*.62} ${h*1.04} ${w*.38} ${h*.97} ${rr} ${h} A ${rr} ${rr} 0 0 1 ${rr} 0 Z")`);
+    const canvas = el.querySelector('.key-waves');
+    if (!canvas) return;
+    const scale = Math.min(2, window.devicePixelRatio || 1);
+    canvas.width = Math.ceil(w * scale); canvas.height = Math.ceil((h + 8) * scale);
+    const c = canvas.getContext('2d'); c.scale(scale, scale);
+    c.beginPath(); const lam = h*.46, amp = h*.075;
+    for (let yy = h*.2; yy < h + amp; yy += h*.4) {
+      c.moveTo(-lam, yy);
+      for (let x = -lam; x <= w + lam; x += lam/8) c.lineTo(x, yy + amp*Math.sin(x/lam*2*Math.PI));
+    }
+    c.strokeStyle = '#fff0a8'; c.lineWidth = h*.11; c.lineCap = 'round'; c.stroke();
+  }
+  const keyObserver = new ResizeObserver(entries => entries.forEach(e => drawKey(e.target)));
+  function decorateKeys() {
+    for (const old of watchedKeys) if (!root.contains(old)) { keyObserver.unobserve(old); watchedKeys.delete(old); }
+    qa('.key:not([data-view]), .report').forEach(el => {
+      el.classList.add('native-key');
+      if (!el.querySelector(':scope > .key-art')) {
+        if (el.tagName === 'BUTTON') {
+          const label = document.createElement('span'); label.className = 'key-label'; label.textContent = el.textContent;
+          el.replaceChildren(label);
+        }
+        const art = document.createElement('span'); art.className = 'key-art'; art.setAttribute('aria-hidden','true');
+        for (const name of ['drop','lip','face']) {
+          const layer = document.createElement('span'); layer.className = `key-${name}`;
+          if (name === 'face') { const wave = document.createElement('canvas'); wave.className = 'key-waves'; wave.setAttribute('aria-hidden','true'); layer.append(wave); }
+          art.append(layer);
+        }
+        el.prepend(art);
+      }
+      if (!watchedKeys.has(el)) { keyObserver.observe(el); watchedKeys.add(el); }
+      drawKey(el);
+    });
+  }
+
+  let base = 'game', modal = null, tab = 'diagnostics', history = 60, limit = 50, recording = true, showCaptureButton = true;
+  let pending = null, active = null, nextId = 4, deleting = [], deleteReturn = null, returnFocus = null, reportsDirty = true;
+  const freshReports = () => [
+    {id:1, note:'Sound crackled when I opened the shop.', time:'Today, 15:42', duration:60, mb:1.8, normalMB:1.8},
+    {id:2, note:'A brief hitch while moving the camera.', time:'Today, 15:31', duration:60, mb:1.7, normalMB:1.7},
+    {id:3, note:'Black bars during the transition.', time:'Yesterday, 20:08', duration:60, mb:1.7, normalMB:1.7}
+  ];
+  let reports = freshReports(); const selected = new Set();
+  const used = () => reports.reduce((n,r) => n+r.mb, 0);
+  const hasRoom = () => used()+1.8 <= limit + 1e-6;
+  const say = text => { q('#proposal-status').textContent = text; };
+  const currentReport = () => reports.find(r => r.id === active);
+  function renderReports() {
+    if (!reportsDirty) return;
+    const list = q('#report-list'); list.replaceChildren();
+    for (const r of reports) {
+      const row = document.createElement('div'); row.className = 'report';
+      const check = document.createElement('input'); check.type = 'checkbox'; check.className = 'report-check'; check.checked = selected.has(r.id); check.setAttribute('aria-label', `Select report: ${r.note || 'No description'}`);
+      check.addEventListener('change', () => { if (check.checked) selected.add(r.id); else selected.delete(r.id); });
+      const thumb = document.createElement('img'); thumb.src = image; thumb.className = 'thumb'; thumb.alt = 'Report screenshot';
+      const info = document.createElement('div'); info.className = 'report-info';
+      const title = document.createElement('button'); title.type = 'button'; title.className = 'report-title'; title.textContent = r.note || 'No description yet'; title.addEventListener('click', () => openReport(r.id));
+      const facts = document.createElement('span'); facts.className = 'small'; facts.textContent = `${r.time} · ${r.duration} sec · ${r.mb.toFixed(1)} MB`;
+      info.append(title,facts);
+      const open = document.createElement('button'); open.type = 'button'; open.className = 'key'; open.textContent = 'Open'; open.addEventListener('click', () => openReport(r.id));
+      row.append(check,thumb,info,open); list.append(row);
+    }
+    if (!reports.length) { const p = document.createElement('p'); p.textContent = 'No saved reports.'; list.append(p); }
+    reportsDirty = false;
+  }
+  function render() {
+    qa('[data-base]').forEach(el => { el.hidden = el.dataset.base !== base; el.inert = !!modal; });
+    qa('[data-view]').forEach(el => el.setAttribute('aria-pressed', String(el.dataset.view === base)));
+    qa('[data-tab]').forEach(el => { const on = el.dataset.tab === tab; el.classList.toggle('picked',on); el.setAttribute('aria-selected',String(on)); });
+    qa('[data-pane]').forEach(el => el.hidden = el.dataset.pane !== tab);
+    qa('[data-recorder]').forEach(el => { const on = (el.dataset.recorder === 'on') === recording; el.classList.toggle('picked',on); el.setAttribute('aria-pressed',String(on)); });
+    qa('[data-capture-button]').forEach(el => { const on = (el.dataset.captureButton === 'show') === showCaptureButton; el.classList.toggle('picked',on); el.setAttribute('aria-pressed',String(on)); });
+    q('[data-action="capture"]').disabled = !recording && !pending;
+    q('[data-action="capture"]').hidden = !showCaptureButton;
+    q('#modal-layer').hidden = !modal;
+    qa('[data-modal]').forEach(el => el.hidden = el.dataset.modal !== modal);
+    q('#report-usage').textContent = `${used().toFixed(1)} / ${limit} MB used`;
+    q('#full-usage').textContent = `${used().toFixed(1)} / ${limit} MB used`;
+    if (pending) q('[data-history]').textContent = `${pending.duration} seconds`;
+    renderReports(); decorateKeys();
+  }
+  // 彈窗保留原本的底頁；報告的彈窗不會跳回遊戲畫面。
+  // A modal preserves its parent page; report dialogs never switch back to gameplay.
+  function showModal(name) {
+    if (!modal) returnFocus = document.activeElement;
+    modal = name; render();
+    const focus = q(`[data-modal="${name}"] textarea, [data-modal="${name}"] button`);
+    focus?.focus({preventScroll:true, focusVisible:false});
+  }
+  function closeModal() {
+    modal = null; render();
+    if (returnFocus?.isConnected && !returnFocus.closest('[hidden]')) returnFocus.focus({preventScroll:true, focusVisible:false});
+    else q(base === 'settings' ? '[data-action="resume"]' : showCaptureButton && (recording || pending) ? '[data-action="capture"]' : '.home-hotspot').focus({preventScroll:true, focusVisible:false});
+  }
+  function openSettings() { base = 'settings'; modal = null; render(); q(`[data-tab="${tab}"]`).focus({preventScroll:true, focusVisible:false}); }
+  function resume() { base = 'game'; modal = null; render(); q(showCaptureButton && (recording || pending) ? '[data-action="capture"]' : '.home-hotspot').focus({preventScroll:true, focusVisible:false}); }
+  function capture() {
+    if (!recording && !pending) return;
+    if (!pending) pending = {duration:history, note:''};
+    q('#capture-note').value = pending.note;
+    showModal(hasRoom() ? 'capture' : 'full');
+  }
+  function openReport(id) {
+    active = id; const r = currentReport();
+    q('#detail-note').value = r.note;
+    q('#detail-facts').textContent = `${r.time} · ${r.duration} sec · ${r.mb.toFixed(1)} MB`;
+    showModal('detail');
+  }
+  function saveNote() { const r = currentReport(); if (r) { r.note = q('#detail-note').value.trim(); reportsDirty = true; } }
+  function askDelete(ids,from) {
+    deleting = ids.filter(id => reports.some(r => r.id === id)); deleteReturn = from;
+    if (!deleting.length) { say('Select a report first.'); return; }
+    const mb = reports.filter(r => deleting.includes(r.id)).reduce((n,r) => n+r.mb,0);
+    q('#delete-summary').textContent = `${deleting.length} report${deleting.length === 1 ? '' : 's'} · frees ${mb.toFixed(1)} MB`;
+    showModal('delete');
+  }
+  function continueHeldCapture() {
+    if (pending && hasRoom()) { q('#capture-note').value = pending.note; showModal('capture'); say('Space is available. Finish saving your held capture.'); return true; }
+    return false;
+  }
+  qa('[data-view]').forEach(el => el.addEventListener('click', () => {
+    if (modal === 'detail') saveNote();
+    if (modal === 'capture' && pending) pending.note = q('#capture-note').value;
+    base = el.dataset.view; modal = null; render();
+  }));
+  qa('[data-tab]').forEach(el => el.addEventListener('click', () => { tab = el.dataset.tab; render(); }));
+  qa('[data-recorder]').forEach(el => el.addEventListener('click', () => { recording = el.dataset.recorder === 'on'; render(); }));
+  qa('[data-capture-button]').forEach(el => el.addEventListener('click', () => { showCaptureButton = el.dataset.captureButton === 'show'; render(); }));
+  qa('[data-options]').forEach(group => group.addEventListener('click', event => {
+    const chosen = event.target.closest('button'); if (!chosen) return;
+    group.querySelectorAll('button').forEach(el => { el.classList.toggle('picked',el === chosen); el.setAttribute('aria-pressed',String(el === chosen)); }); decorateKeys();
+    say('Preview choice only. No game settings changed.');
+  }));
+  q('#history-length').addEventListener('change', event => { if (event.target.reportValidity()) { history = Number(event.target.value); say('Preview history updated.'); } });
+  q('#storage-limit').addEventListener('change', event => { if (event.target.reportValidity()) { limit = Number(event.target.value); render(); if (!continueHeldCapture()) say('Preview report limit updated. No reports were deleted.'); } });
+  q('#demo-full').addEventListener('change', event => {
+    if (modal === 'detail') saveNote();
+    if (!reports.length && event.target.checked) reports = freshReports();
+    if (event.target.checked) { const factor = Math.max(0,limit-.8)/used(); reports.forEach(r => { r.mb *= factor; }); }
+    else reports.forEach(r => { r.mb = r.normalMB; });
+    reportsDirty = true; render(); say('Sample storage changed. Press Capture report in the game to test the warning.');
+  });
+  root.addEventListener('click', event => {
+    const button = event.target.closest('[data-action]'); if (!button) return;
+    switch (button.dataset.action) {
+      case 'capture': capture(); break;
+      case 'open-settings': openSettings(); break;
+      case 'resume': resume(); break;
+      case 'discard-capture': pending = null; closeModal(); say('Capture discarded. Saved reports were kept.'); break;
+      case 'save-capture': {
+        if (!pending) break;
+        pending.note = q('#capture-note').value.trim();
+        if (!hasRoom()) { showModal('full'); break; }
+        reports.unshift({id:nextId++, note:pending.note, time:'Just now', duration:pending.duration, mb:1.8, normalMB:1.8});
+        reportsDirty = true; pending = null; closeModal(); say('Report saved in this preview. No file was written.'); break;
+      }
+      case 'manage-reports': tab = 'diagnostics'; openSettings(); say('Capture held in memory while you free space.'); break;
+      case 'change-limit': tab = 'diagnostics'; openSettings(); q('#storage-limit').focus({preventScroll:true}); say('Capture held in memory while you change the limit.'); break;
+      case 'close-detail': saveNote(); closeModal(); break;
+      case 'share-detail': saveNote(); say('Preview only: the report and its note would open in the share sheet. Nothing was sent.'); break;
+      case 'share-selected': say(selected.size ? `Preview only: ${selected.size} selected report${selected.size === 1 ? '' : 's'} would be shared. Nothing was sent.` : 'Select a report first.'); break;
+      case 'delete-detail': saveNote(); askDelete([active],'detail'); break;
+      case 'delete-selected': askDelete([...selected],'settings'); break;
+      case 'cancel-delete': if (deleteReturn === 'detail') showModal('detail'); else closeModal(); break;
+      case 'confirm-delete': reports = reports.filter(r => !deleting.includes(r.id)); deleting.forEach(id => selected.delete(id)); reportsDirty = true; if (hasRoom()) q('#demo-full').checked = false; if (!continueHeldCapture()) { closeModal(); say('Selected sample reports deleted. Your game and saves were not changed.'); } break;
+      case 'sample-save': say('Preview only. No game saves were read or changed.'); break;
+    }
+  });
+  root.addEventListener('keydown', event => {
+    if (!modal) return;
+    if (event.key === 'Escape') {
+      if (modal === 'detail') saveNote();
+      if (modal === 'capture' || modal === 'full') pending = null;
+      event.preventDefault(); closeModal(); return;
+    }
+    if (event.key !== 'Tab') return;
+    const elements = [...q(`[data-modal="${modal}"]`).querySelectorAll('button,textarea,input')].filter(el => !el.disabled && el.getClientRects().length);
+    const first = elements[0], last = elements[elements.length-1];
+    if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+    else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+  });
+  render(); document.fonts.ready.then(decorateKeys);
+})();
+</script>
+</body>
+</html>

@@ -7,6 +7,7 @@
 - Scripts the user runs live in `scripts/` at the repository root (now `build_ipa_from_nsp.py` and `build_mac_app.py`). Each one runs both in Spyder (F5, configured by the settings block at its top) and from a terminal (command-line options override those settings; non-zero exit on error). Tools that only agents or other scripts call stay under `dm/`.
 - Game files, keys and anything extracted from them live in the user's workspace (`~/<id>-work`, Tomodachi Life `~/010051F0207B2000-work`) or in the NSP folder's `<id>_build/`, never in this repository. Do not print key values.
 - Code comments are bilingual: a Traditional Chinese line, then an English line. Red log lines start with `【紅】`. Keep both conventions. No Simplified Chinese anywhere in the repository (comments, logs, docs, user-facing text).
+- UI mockups must match the game's UI exactly. Use verified game references for colours, fonts, shapes, spacing, textures and states; do not invent a substitute theme or apply automatic light/dark recolouring. If a required reference is missing, ask rather than guess.
 - After changing anything on the shader translation chain, run the chain procedure for each affected profile. The chain covers `dm/gfx/tools/dmsh_*`, `Program.cs`, the profile's `shader_map.tsv` / `shader_facts.tsv` / `shader_pairs.tsv`, and its `nvn_*` / `shader_*` keys. The procedure:
   1. Run `dmsh_chain.py --header`, which writes the profile's `dmsh_chain.h`.
   2. Rebuild the shaders (Mac and, with `IOSOUT`, iOS).
