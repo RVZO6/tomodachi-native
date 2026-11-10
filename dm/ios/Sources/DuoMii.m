@@ -10,6 +10,7 @@
 #include "duo_mii.h"
 #include "duo_save_store.h"
 #include "dm_mii_codec.h"
+#include "dm_mii_input.h"
 
 static NSFileManager *fm(void) { return NSFileManager.defaultManager; }
 static NSString *save(void) { return [duo_save_documents() stringByAppendingPathComponent:@"save"]; }
@@ -44,7 +45,13 @@ static NSData *bounded(NSString *path,NSUInteger limit,NSString **out) {
     while(d.length<=limit && (n=[s read:bytes maxLength:MIN(sizeof bytes,limit+1-d.length)])>0)[d appendBytes:bytes length:(NSUInteger)n];
     [s close];if(n<0||d.length>limit){error(out,@"The file could not be read or is too large.");return nil;}return d;
 }
-static BOOL parse(NSData *data,dm_mii_ltd *ltd,NSString **out) { char e[256]={0};if(!data||dm_mii_ltd_parse(data.bytes,data.length,ltd,e,sizeof e))return error(out,e[0]?@(e):@"The Mii file is invalid.");return YES; }
+// 擁有者必須存活到所有檢視使用完畢；每個呼叫範圍自動清理。
+// Keep the owner alive through all view use; each caller scope performs automatic cleanup.
+static BOOL parse(NSData *data,dm_mii_input **owner,dm_mii_ltd *ltd,NSString **out) {
+    char e[256]={0};*owner=data?dm_mii_input_open(data.bytes,data.length,e,sizeof e):NULL;
+    if(!*owner)return error(out,e[0]?@(e):@"The Mii file is invalid.");
+    *ltd=*dm_mii_input_view(*owner);return YES;
+}
 static NSString *name_bytes(const uint8_t *bytes,size_t n) {
     size_t len=0;while(len+1<n&&(bytes[len]||bytes[len+1]))len+=2;NSString *s=[[NSString alloc] initWithBytes:bytes length:len encoding:NSUTF16LittleEndianStringEncoding]?:@"";s=[[s componentsSeparatedByCharactersInSet:NSCharacterSet.controlCharacterSet] componentsJoinedByString:@""];return [s stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet].length?s:@"Mii";
 }
@@ -67,7 +74,7 @@ NSDictionary *duo_mii_read_file(NSURL *url,NSString **out) {
     BOOL scoped=[url startAccessingSecurityScopedResource];__block NSData *data=nil;__block NSString *why=nil;NSError *coord=nil;
     [[[NSFileCoordinator alloc] initWithFilePresenter:nil] coordinateReadingItemAtURL:url options:NSFileCoordinatorReadingWithoutChanges error:&coord byAccessor:^(NSURL *u){data=bounded(u.path,DM_MII_LTD_LIMIT,&why);}];
     if(scoped)[url stopAccessingSecurityScopedResource];if(!data){error(out,why?:coord.localizedDescription?:@"The selected file is not available.");return nil;}
-    data=[data copy];dm_mii_ltd ltd;if(!parse(data,&ltd,out))return nil;
+    data=[data copy];dm_mii_input *owner __attribute__((cleanup(dm_mii_input_cleanup)))=NULL;dm_mii_ltd ltd;if(!parse(data,&owner,&ltd,out))return nil;
     return @{@"bytes":data,@"filename":url.lastPathComponent?:@"Mii.ltd",@"name":name_bytes(ltd.bytes+0xe8,64),@"sha256":hash(data)};
 }
 static NSString *job_path(NSString *action) {
@@ -96,9 +103,10 @@ static BOOL target_ok(NSDictionary *target,dm_mii_slot slots[70],unsigned *slot,
 BOOL duo_mii_queue(NSDictionary *input,NSDictionary *target,NSString **out) {
     if(![input isKindOfClass:NSDictionary.class]||![target isKindOfClass:NSDictionary.class])return error(out,@"Choose a file and an islander first.");
     if(duo_save_pending())return error(out,@"Another save change is already queued. Cancel it in Save Data first.");
-    NSData *data=input[@"bytes"];if(![data isKindOfClass:NSData.class])return error(out,@"Choose a Mii file first.");dm_mii_ltd ltd;if(!parse(data,&ltd,out))return NO;
+    NSData *data=input[@"bytes"];if(![data isKindOfClass:NSData.class])return error(out,@"Choose a Mii file first.");dm_mii_input *owner __attribute__((cleanup(dm_mii_input_cleanup)))=NULL;dm_mii_ltd ltd;if(!parse(data,&owner,&ltd,out))return NO;
+    data=[NSData dataWithBytes:ltd.bytes length:ltd.size];
     NSString *snap=snapshot(out);if(!snap)return NO;dm_mii_slot slots[70];NSData *m=nil,*p=nil;unsigned slot=0;BOOL ok=roster_data(snap,&m,&p,slots,out)&&target_ok(target,slots,&slot,out);
-    if(ok){NSMutableData *mc=[m mutableCopy],*pc=[p mutableCopy];dm_mii_paint_plan paint;char e[256]={0};if(dm_mii_apply(mc.mutableBytes,mc.length,pc.mutableBytes,pc.length,&ltd,slot,&paint,e,sizeof e))ok=error(out,@(e));}
+    if(ok){NSMutableData *mc=[m mutableCopy],*pc=[p mutableCopy];dm_mii_paint_plan paint;char e[256]={0};if(dm_mii_input_replace(owner,mc.mutableBytes,mc.length,pc.mutableBytes,pc.length,slot,&paint,e,sizeof e))ok=error(out,@(e));}
     [fm() removeItemAtPath:snap error:nil];if(!ok)return NO;
     NSString *token=NSUUID.UUID.UUIDString,*dir=[jobs() stringByAppendingPathComponent:token];
     if([fm() fileExistsAtPath:jobs()]&&!tree_safe(jobs()))return error(out,@"The Mii import folder is not safe to use.");
@@ -115,7 +123,7 @@ NSURL *duo_mii_export(NSDictionary *target,NSString **out) {
     if(ok&&paint!=UINT32_MAX){NSData *d=bounded([snap stringByAppendingPathComponent:paint_path(paint,YES)],DM_MII_LTD_LIMIT,out);if(d)[data appendData:d];else ok=NO;}
     marker=0xa4a4a4a4;[data appendBytes:&marker length:4];
     if(ok&&paint!=UINT32_MAX){NSData *d=bounded([snap stringByAppendingPathComponent:paint_path(paint,NO)],DM_MII_LTD_LIMIT,out);if(d)[data appendData:d];else ok=NO;}
-    [fm() removeItemAtPath:snap error:nil];dm_mii_ltd checked;if(ok)ok=parse(data,&checked,out);if(!ok)return nil;
+    [fm() removeItemAtPath:snap error:nil];dm_mii_input *owner __attribute__((cleanup(dm_mii_input_cleanup)))=NULL;dm_mii_ltd checked;if(ok)ok=parse(data,&owner,&checked,out);if(!ok)return nil;
     NSString *dir=[NSTemporaryDirectory() stringByAppendingPathComponent:[@"mii-export-" stringByAppendingString:NSUUID.UUID.UUIDString]];
     if(![fm() createDirectoryAtPath:dir withIntermediateDirectories:YES attributes:@{NSFilePosixPermissions:@0700} error:nil]){error(out,@"The export could not be saved.");return nil;}
     NSString *name=[name_bytes(checked.bytes+0xe8,64) stringByReplacingOccurrencesOfString:@"/" withString:@"-"];name=[name stringByReplacingOccurrencesOfString:@":" withString:@"-"];
@@ -143,6 +151,7 @@ BOOL duo_mii_apply_pending(NSString *action) {
     if(![action hasPrefix:@"mii:"])return NO;
     NSString *job=job_path(action),*why=nil;NSMutableDictionary *plan=nil;BOOL swapped=NO,applied=NO;NSString *stage=job?[job stringByAppendingPathComponent:@"save.prepared"]:nil;
     {
+    dm_mii_input *owner __attribute__((cleanup(dm_mii_input_cleanup)))=NULL;
     if(!job||!tree_safe(job)){why=@"The queued Mii import is missing or invalid.";goto finish;}
     NSData *pd=bounded([job stringByAppendingPathComponent:@"plan.plist"],65536,&why);if(!pd)goto finish;
     id value=[NSPropertyListSerialization propertyListWithData:pd options:NSPropertyListMutableContainers format:NULL error:nil];
@@ -155,13 +164,13 @@ BOOL duo_mii_apply_pending(NSString *action) {
         applied=YES;goto finish;
     }
     NSData *data=bounded([job stringByAppendingPathComponent:@"incoming.ltd"],DM_MII_LTD_LIMIT,&why);dm_mii_ltd ltd;
-    if(!data||![hash(data) isEqual:plan[@"sha256"]]||!parse(data,&ltd,&why)){if(!why)why=@"The queued Mii file changed. Import it again.";goto finish;}
+    if(!data||![hash(data) isEqual:plan[@"sha256"]]||!parse(data,&owner,&ltd,&why)){if(!why)why=@"The queued Mii file changed. Import it again.";goto finish;}
     NSDictionary *before=tree_hashes(save());if(!before){why=@"The current island cannot be read safely.";goto finish;}
     [fm() removeItemAtPath:stage error:nil];if(!copy_tree(save(),stage)){why=@"The island could not be copied. Check free storage.";goto finish;}
     NSData *m=nil,*p=nil;dm_mii_slot slots[70];unsigned slot=0;
     if(!roster_data(stage,&m,&p,slots,&why)||!target_ok(plan,slots,&slot,&why))goto finish;
     NSMutableData *mc=[m mutableCopy],*pc=[p mutableCopy];dm_mii_paint_plan paint;char e[256]={0};
-    if(dm_mii_apply(mc.mutableBytes,mc.length,pc.mutableBytes,pc.length,&ltd,slot,&paint,e,sizeof e)){why=@(e);goto finish;}
+    if(dm_mii_input_replace(owner,mc.mutableBytes,mc.length,pc.mutableBytes,pc.length,slot,&paint,e,sizeof e)){why=@(e);goto finish;}
     if(![mc writeToFile:[stage stringByAppendingPathComponent:@"Mii.sav"] options:NSDataWritingAtomic error:nil]||![pc writeToFile:[stage stringByAppendingPathComponent:@"Player.sav"] options:NSDataWritingAtomic error:nil]){why=@"The edited save could not be written.";goto finish;}
     NSMutableDictionary *outputs=[NSMutableDictionary dictionaryWithDictionary:@{@"Mii.sav":hash(mc),@"Player.sav":hash(pc)}];
     if(paint.write_paint){NSString *ugc=[stage stringByAppendingPathComponent:@"Ugc"];if(![fm() createDirectoryAtPath:ugc withIntermediateDirectories:YES attributes:nil error:nil]){why=@"Face paint could not be saved.";goto finish;}

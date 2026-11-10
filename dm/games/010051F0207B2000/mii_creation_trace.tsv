@@ -1,0 +1,5 @@
+# 僅限正常建立流程的觀測入口；不是可執行的匯入配接器。build_id 與 game.tsv / fixups.tsv 相同。
+# Normal-creation observation entry points only; not an executable import adapter. build_id matches game.tsv / fixups.tsv.
+build_id	create	created_callback	create_state	convert	construct
+b39fef373fb12154385d012aab3bc99e	1b88170	1b89c0c	1f84984	1b874a0	606a34
+56bf85bd535413464cb75bb6c2683b67	1be1840	1be32dc	1fdfcb4	1be0b70	4c6cf8

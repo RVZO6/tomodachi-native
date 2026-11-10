@@ -126,3 +126,7 @@ live game occupancy. Do not use it as the allocator or occupancy authority for a
 new-islander path. `dm_mii_apply` remains replacement-only, with zero-based slots
 0–69 and its existing-record guard intact. No creation ABI, guest callback, runtime
 occupancy mutation, or new-islander implementation is enabled in this checkpoint.
+
+## Separate new-islander work
+
+Importing a file as a **new** islander is not enabled. It must use the game's normal creation and placement sequence, not this replacement path or writes to empty save slots. See [the disabled integration checkpoint and runtime evidence](MII_NEW_ISLANDER.md).
