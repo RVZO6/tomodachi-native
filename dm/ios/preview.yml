@@ -15,6 +15,9 @@ targets:
       - Sources/DuoTypeCard.m
       - Sources/DuoPanel.m
       - Sources/DuoSave.m
+      - Sources/DuoDiagnostics.m
+      - Sources/DmDiagnosticStore.m
+      - Sources/dm_diagnostics.c
       - Sources/duo_shell.h
       - Preview
       - path: GenPreview/duo    # Logo、波浪、塗鴉、靜態圖、闔上的聲音（都只在本機） | logo, wave, doodles, stills, the closing sound (all local only)

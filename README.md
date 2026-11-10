@@ -75,6 +75,36 @@ Details per part are in [How it works in detail](#how-it-works-in-detail).
 
 **Will other games come?** This fork covers Tomodachi Life only. Super Mario Bros. Wonder and Fire Emblem Engage run with [nxnative](https://github.com/seedds/smbw-mobile), the project this fork continues. To bring up another game, see [Port another game](#port-another-game).
 
+## Diagnostic reports on iPhone and iPad
+
+**Capture report** keeps the recent logs and frame/audio timings with a game
+screenshot. Add an optional note, then save it. It stays on the device until you
+share it. Nothing uploads automatically, and no video or microphone audio is
+recorded.
+
+Under **HOME → Settings → Diagnostics**, configure the history (default **60 s**),
+saved-report limit (default **50 MB**), recording, and the on-screen capture
+button. View or edit notes, select reports to share in one ZIP, or delete them.
+At the limit, saving stops and warns; saved reports are never auto-deleted.
+An unsaved capture is memory-only and is lost if the app exits.
+
+The rolling buffers use **less than 6 MiB** of fixed storage, not an ever-growing file.
+The actual retained time can be shorter during startup or heavy logging; each
+report records its actual timing/log coverage and lost-sample counters. Audio
+and graphics writers do not wait for the recorder. Existing `log.txt` and
+`log.prev.txt` are each limited to 256 KiB (crash output can add a small tail).
+Application logs remain bounded even when diagnostic timing recording is off.
+
+Reports live in `Documents/DiagnosticReports`. The ZIP contains a descriptions
+index plus each report's JSON metadata, logs, timing CSV, and screenshot. Share
+exports are temporary, limited to one report-limit-sized ZIP, and removed after
+sharing or on the next launch. This temporary export is additional to the saved
+reports. If a stalled frame prevents a screenshot, the report records that
+failure and retains its logs and timings. Review notes and screenshots before
+sharing; game content can contain personal information.
+
+Tests without game files: `make -C dm/host/tests diagnostics`.
+
 ## Known issues
 
 - Clicks have only been tried on the opening menus (naming the island and its confirmation). If a click does nothing in a later scene, add `mouse:Left A` to `keymap.txt` to move the hand with the mouse instead.

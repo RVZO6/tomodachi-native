@@ -10,7 +10,8 @@
 #   stdout            xcconfig lines: HEADER_SEARCH_PATHS (-I directories + the directory of every source file, so relative includes resolve as usual),
 #                     OTHER_CFLAGS (-D), frameworks (Cocoa is replaced by what the UIKit side already has, skipped)
 # Usage: gen_build.py <dm/host dir> <Gen dir>
-import os, shlex, subprocess, sys
+import os, shlex, subprocess, sys, hashlib
+from pathlib import Path
 host, gen = os.path.abspath(sys.argv[1]), os.path.abspath(sys.argv[2])
 subprocess.run(['make', '-s', '-C', host, 'game_profile'], check=True)   # 先真生成遊戲檔案頭（下面 make -n 只打印不執行；GAME 隨環境） | generate the game profile header for real first (make -n below only prints; GAME comes from the environment)
 cmd = subprocess.run(['make', '-s', '-n', '-B', '-C', host, 'dmhost'], capture_output=True, text=True, check=True).stdout
@@ -47,3 +48,17 @@ for s in srcs:
 print('HEADER_SEARCH_PATHS = $(inherited) ' + ' '.join(f'"{d}"' for d in incs + dirs))
 print('OTHER_CFLAGS = $(inherited) ' + ' '.join(defs))
 print('DM_FRAMEWORKS = ' + ' '.join(f'-framework {f}' for f in fws if f != 'Cocoa'))
+# 報告可辨認宿主原始碼；只記雜湊，不記工作目錄或 Git 使用者名稱。
+# Reports identify the host source by hash, never by workspace path or Git user name.
+root = Path(host).parent
+revision = subprocess.run(['git', '-C', str(root), 'rev-parse', 'HEAD'], capture_output=True, text=True).stdout.strip() or 'unknown'
+print('DM_SOURCE_REVISION = ' + revision)
+fingerprint = hashlib.sha256()
+paths = set(map(Path, srcs))
+profile = root / 'games' / os.environ.get('GAME', '')
+paths.update(p for p in (profile / 'game.tsv', profile / 'dmsh_chain.h') if p.is_file())
+for folder in (root / 'host', root / 'gfx', root / 'ios' / 'Sources'):
+    paths.update(p for p in folder.rglob('*') if p.is_file() and p.suffix in ('.h', '.c', '.m', '.S') and 'gen' not in p.parts)
+for path in sorted(paths):
+    fingerprint.update(str(path.relative_to(root)).encode() + b'\0' + path.read_bytes())
+print('DM_SOURCE_FINGERPRINT = ' + fingerprint.hexdigest())

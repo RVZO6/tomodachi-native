@@ -9,6 +9,7 @@
 #pragma once
 #import <UIKit/UIKit.h>
 
+
 // 遊戲配色（島名頁取色） | the game's palette (sampled from the island-name page)
 enum {
     DUO_YELLOW = 0xFFC100, DUO_ORANGE = 0xFF8000, DUO_NAVY = 0x002240,
@@ -77,7 +78,15 @@ void duo_capture_pressed(void);
 
 // 設定面板（DuoPanel.m）：HOME 打開（遊戲暫停），蓋在整個畫面上。頁號見下；開機才讀的設定（語言、畫面形狀、幀率、存檔還原 / 從頭開始）下次開啟遊戲時生效
 // The settings panel (DuoPanel.m): opened by HOME (the game pauses), covering the whole screen. Page numbers below; settings read at boot (language, picture shape, frame rate, save restore / start over) take effect the next time the game opens
-enum { DUO_PAGE_LANGUAGE, DUO_PAGE_DISPLAY, DUO_PAGE_CONTROLS, DUO_PAGE_SAVE, DUO_PAGE_N };
+enum { DUO_PAGE_LANGUAGE, DUO_PAGE_DISPLAY, DUO_PAGE_CONTROLS, DUO_PAGE_SAVE, DUO_PAGE_DIAGNOSTICS, DUO_PAGE_N };
+// 與設定面板共用真正的按鍵幾何；0 白色、1 選中、2 設定確認橘、3 遊戲對話確認色。
+// Share the settings panel's actual key geometry: 0 white, 1 picked, 2 settings orange, 3 game-dialog confirm.
+@interface DuoPill : UIControl
+@property(nonatomic) int style;
+@property(nonatomic) CGFloat depth;
+@property(nonatomic,readonly) UILabel *title, *sub;
+@end
+DuoPill *duo_make_pill(NSString *title, NSString *sub, int style, CGFloat scale, void (^tap)(void));
 @interface DuoPanel : UIView
 @property (nonatomic, copy) void (^resume)(void);       // 「繼續」 | Resume
 @property (nonatomic, copy) void (^padChanged)(void);   // 螢幕按鍵的設定改了 | the on-screen button settings changed

@@ -9,6 +9,7 @@
 #include <unistd.h>
 #include "game_profile.h"   // 遊戲檔案常數（RomFS 認定路徑） | game profile constants (the RomFS marker path)
 #include "duo_shell.h"      // 遊戲語言、存檔待辦、主畫面快速動作 | game language, pending save actions, Home Screen quick actions
+#include "DuoDiagnostics.h"
 
 int dm_main(int argc, char **argv);   // dm/host/main.c 以 -Dmain=dm_main 編入 | dm/host/main.c compiled in with -Dmain=dm_main
 void dm_host_preload_start(int argc, char **argv);
@@ -33,9 +34,7 @@ static int boot_env(void) {
     NSString *res = NSBundle.mainBundle.resourcePath;
     // 日誌：宿主只寫 stderr；重定向到 Documents/log.txt（上一次的留作 log.prev.txt），出問題時從「文件」App 取
     // Log: the host only writes to stderr; redirect it to Documents/log.txt (the previous one is kept as log.prev.txt), retrieve it from the Files app when something goes wrong
-    NSString *log = [doc stringByAppendingPathComponent:@"log.txt"], *prev = [doc stringByAppendingPathComponent:@"log.prev.txt"];
-    [fm removeItemAtPath:prev error:nil]; [fm moveItemAtPath:log toPath:prev error:nil];
-    if (freopen(log.fileSystemRepresentation, "w", stderr)) setvbuf(stderr, NULL, _IOLBF, 0);
+    duo_diagnostics_boot(doc);
     duo_save_apply_pending();   // 設定裡排好的「還原」「從頭開始」：在宿主掛存檔之前做（DuoSave.m） | Restore / Start Over scheduled in the settings: done before the host mounts the save (DuoSave.m)
     for (NSString *d in @[@"save", @"temp"]) [fm createDirectoryAtPath:[doc stringByAppendingPathComponent:d] withIntermediateDirectories:YES attributes:nil error:nil];
     // 環境開關文件（真機診斷用，側載裝的包沒法從外面設環境變量）：每行 KEY=VALUE，# 開頭為注釋；Documents/env.txt 優先於包內 dm/env.txt（build_ipa.sh 的 DM_ENV_FILE 放進去）

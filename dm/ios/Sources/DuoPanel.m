@@ -14,6 +14,7 @@
 #include <stdio.h>
 #include <errno.h>
 #include "duo_shell.h"
+#include "DuoDiagnostics.h"
 
 __attribute__((weak)) int duo_game_option_known(const char *name) { (void)name; return 0; }
 __attribute__((weak)) void duo_game_set_upscale(int on) { (void)on; }
@@ -125,11 +126,6 @@ static UIBezierPath *wobble(CGRect r) {   // 手繪感的膠囊：上下兩邊�
     return p;
 }
 
-@interface DuoPill : UIControl
-@property (nonatomic) int style;
-@property (nonatomic) CGFloat depth;
-@property (nonatomic, readonly) UILabel *title, *sub;
-@end
 @implementation DuoPill {
     CAShapeLayer *_drop, *_lip, *_face, *_stripes, *_stripeMask;
 }
@@ -153,8 +149,8 @@ static UIBezierPath *wobble(CGRect r) {   // 手繪感的膠囊：上下兩邊�
     CGRect face = CGRectMake(0, 0, w, h);
     _drop.path = [wobble(CGRectOffset(face, 0, 2 * d)) CGPath]; _lip.path = [wobble(CGRectOffset(face, 0, d)) CGPath];
     _face.path = _stripeMask.path = [wobble(CGRectOffset(face, 0, sink)) CGPath];
-    UIColor *faceC = _style == PILL_PICKED ? duo_rgb(k_pick) : _style == PILL_CONFIRM ? duo_rgb(DUO_ORANGE) : UIColor.whiteColor;
-    UIColor *lipC = _style == PILL_PICKED ? duo_rgb(k_pick_lip) : _style == PILL_CONFIRM ? duo_rgb(DUO_ORANGE_LIP) : duo_rgb(DUO_LIP);
+    UIColor *faceC = _style == PILL_PICKED ? duo_rgb(k_pick) : _style == 3 ? duo_rgb(0xFF3700) : _style == PILL_CONFIRM ? duo_rgb(DUO_ORANGE) : UIColor.whiteColor;
+    UIColor *lipC = _style == PILL_PICKED ? duo_rgb(k_pick_lip) : _style == 3 ? duo_rgb(0xCD2B00) : _style == PILL_CONFIRM ? duo_rgb(DUO_ORANGE_LIP) : duo_rgb(DUO_LIP);
     _face.fillColor = faceC.CGColor; _lip.fillColor = lipC.CGColor; _drop.fillColor = duo_rgb(DUO_DROP).CGColor;
     _stripes.hidden = _style != PILL_PICKED;
     if (!_stripes.hidden) {   // 淺色波浪紋：幾道橫向的正弦線，同遊戲選中的鍵 | the pale wavy stripes: a few horizontal sine lines, as on the game's picked key
@@ -166,7 +162,7 @@ static UIBezierPath *wobble(CGRect r) {   // 手繪感的膠囊：上下兩邊�
         _stripes.path = sp.CGPath; _stripes.strokeColor = duo_rgb(k_pick_stripe).CGColor; _stripes.lineWidth = h * 0.11; _stripes.frame = self.bounds; _stripeMask.frame = self.bounds;
     }
     [CATransaction commit];
-    UIColor *textC = _style == PILL_CONFIRM ? UIColor.whiteColor : duo_rgb(DUO_NAVY);
+    UIColor *textC = _style >= PILL_CONFIRM ? UIColor.whiteColor : duo_rgb(DUO_NAVY);
     _title.textColor = textC; _sub.textColor = [textC colorWithAlphaComponent:0.62];
     CGFloat pad = h * 0.45, th = _sub.hidden ? h : h * 0.56;
     _title.frame = CGRectMake(pad, sink + (_sub.hidden ? 0 : h * 0.12), w - 2 * pad, _sub.hidden ? h : th - h * 0.06);
@@ -174,6 +170,14 @@ static UIBezierPath *wobble(CGRect r) {   // 手繪感的膠囊：上下兩邊�
 }
 - (void)setHighlighted:(BOOL)hl { BOOL was = self.highlighted; [super setHighlighted:hl]; if (was != hl) [self setNeedsLayout]; }
 @end
+
+DuoPill *duo_make_pill(NSString *title, NSString *sub, int style, CGFloat u, void (^tap)(void)) {
+    DuoPill *p=[DuoPill new];p.style=style;p.depth=4*u;p.title.text=title;p.title.font=duo_font(19*u,UIFontWeightBold);
+    if(sub.length){p.sub.hidden=NO;p.sub.text=sub;p.sub.font=duo_font(14*u,UIFontWeightSemibold);}
+    p.accessibilityLabel=sub.length?[NSString stringWithFormat:@"%@, %@",title,sub]:title;
+    p.accessibilityTraits=UIAccessibilityTraitButton|(style==1?UIAccessibilityTraitSelected:0);
+    if(tap)[p addAction:[UIAction actionWithHandler:^(UIAction *a){(void)a;tap();}] forControlEvents:UIControlEventTouchUpInside];return p;
+}
 
 // ---- 面板 | The panel ----
 // 整個畫面變成遊戲那種黃色的頁（遊戲暫停中，畫面本來就停著）：上面置中的標題、右上確認橘的「繼續」、一排分頁鍵；底下是遊戲的波浪帶。
@@ -210,13 +214,16 @@ static UIBezierPath *wobble(CGRect r) {   // 手繪感的膠囊：上下兩邊�
         NSMutableArray *tabs = [NSMutableArray array];
         for (int i = 0; i < DUO_PAGE_N; i++) { DuoPill *t = [DuoPill new]; t.tag = i; [t addTarget:self action:@selector(tabTapped:) forControlEvents:UIControlEventTouchUpInside]; [_head addSubview:t]; [tabs addObject:t]; }
         _tabs = tabs;
+        [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(diagnosticsChanged:) name:DuoDiagnosticsChanged object:nil];
     }
     return self;
 }
+- (void)dealloc { [[NSNotificationCenter defaultCenter] removeObserver:self]; }
+- (void)diagnosticsChanged:(NSNotification *)n { (void)n; if (_page == DUO_PAGE_DIAGNOSTICS) [self relayout]; }
 - (void)resumeTapped { _confirm = nil; _reverted = nil; if (self.resume) self.resume(); }
 - (void)tabTapped:(DuoPill *)t { if (t.tag == _page && !_confirm) return; [[UISelectionFeedbackGenerator new] selectionChanged]; self.page = t.tag; }
-- (void)setPage:(NSInteger)p { _page = MAX(0, MIN(p, DUO_PAGE_N - 1)); _confirm = nil; _flash = nil; _scroll.contentOffset = CGPointZero; [self relayout]; }
-- (void)refresh { _confirm = nil; _flash = nil; NSString *f = duo_save_take_failure(); if (f) { _failed = f; _page = DUO_PAGE_SAVE; } [self relayout]; }
+- (void)setPage:(NSInteger)p { _page = MAX(0, MIN(p, DUO_PAGE_N - 1)); _confirm = nil; _flash = nil; _scroll.contentOffset = CGPointZero; [self relayout]; if (_page == DUO_PAGE_DIAGNOSTICS) duo_diagnostics_refresh(); }
+- (void)refresh { _confirm = nil; _flash = nil; NSString *f = duo_save_take_failure(); if (f) { _failed = f; _page = DUO_PAGE_SAVE; } [self relayout]; if (_page == DUO_PAGE_DIAGNOSTICS) duo_diagnostics_refresh(); }
 - (void)relayout { _laidW = 0; [self setNeedsLayout]; [self layoutIfNeeded]; UIAccessibilityPostNotification(UIAccessibilityLayoutChangedNotification, nil); }
 - (void)changed { [[UISelectionFeedbackGenerator new] selectionChanged]; [self relayout]; }
 - (void)ask:(NSString *)what { _confirm = what; _scroll.contentOffset = CGPointZero; [self changed]; }
@@ -453,7 +460,7 @@ static UIBezierPath *wobble(CGRect r) {   // 手繪感的膠囊：上下兩邊�
     _resumeKey.frame = CGRectMake(rx, top, rw, rh);
     _title.font = duo_font(28 * u, UIFontWeightHeavy); _title.frame = CGRectMake(x0 + rw, top, W - 2 * rw, 50 * u);
     // 分頁鍵：等寬一排（放不下就兩排） | the page keys: one row of equal widths (two rows when they do not fit)
-    NSString *names[DUO_PAGE_N] = {L(@"語言", @"Language"), L(@"畫面", @"Display"), L(@"按鍵", @"Controls"), L(@"存檔", @"Save Data")};
+    NSString *names[DUO_PAGE_N] = {L(@"語言", @"Language"), L(@"畫面", @"Display"), L(@"按鍵", @"Controls"), L(@"存檔", @"Save Data"), L(@"診斷", @"Diagnostics")};
     // 字先縮到 15 點左右也要排成一排；還放不下才兩排 | shrink the text to about 15 points to keep one row; two rows only when it still does not fit
     UIFont *tf = nil; CGFloat gap = 12 * u; int cols = 2;
     for (CGFloat fs = 19; fs >= 15 && cols == 2; fs -= 1) {
@@ -497,6 +504,9 @@ static UIBezierPath *wobble(CGRect r) {   // 手繪感的膠囊：上下兩邊�
                 case DUO_PAGE_LANGUAGE: [self pageLanguage]; break;
                 case DUO_PAGE_DISPLAY: [self pageDisplay]; break;
                 case DUO_PAGE_CONTROLS: [self pageControls]; break;
+                case DUO_PAGE_DIAGNOSTICS: {
+                    UIView *v=duo_diagnostics_settings(_bodyW,_u,^{[ws changed];});v.frame=CGRectMake(0,_y,_bodyW,v.bounds.size.height);[_body addSubview:v];_y+=v.bounds.size.height;break;
+                }
                 default: [self pageSave]; break;
             }
             if (!_confirm && boot_changed()) [self quitSection];

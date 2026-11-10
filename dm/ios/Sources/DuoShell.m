@@ -14,6 +14,7 @@
 #include <stdio.h>
 #include "front.h"
 #include "duo_shell.h"
+#include "DuoDiagnostics.h"
 
 static const CGFloat k_duo_shape = 1920.0 / 1350.0;   // 沒有摺痕時上半的形狀 | the top's shape when there is no fold
 static const CGFloat k_refl_alpha = 0.30, k_refl_depth = 1.0 / 3, k_refl_blur = 3.5;   // 倒影：起始不透明度、淡出深度（下半高度的比例）、模糊半徑（點） | reflection: starting opacity, fade depth (fraction of the lower half), blur radius (points)
@@ -92,6 +93,7 @@ static double g_picture_aspect = 1920.0 / 1350.0;   // 主線程寫、各線程�
     CIContext *_ci;
     double _contentAspect;                               // 非靜態圖畫面的內容寬高比（遊戲出圖形狀），按它等比置中；0 = 鋪滿 | content aspect of a non-still picture (the game's output shape), centred at it; 0 = fill
     DuoPanel *_settings; BOOL _paused, _readyCalled;      // 設定面板（暫停時開著） | the settings panel (open while paused)
+    DuoPill *_diagnosticKey;
     NSInteger _wantPage;                                 // 等著打開的設定頁（快速動作、-DuoPanel；開場畫面收起後打開），沒有 = -1 | a settings page waiting to open (quick action, -DuoPanel; opened once the opening screen clears), none = -1
     BOOL _ctrl;                                          // 接著實體手把 | a physical controller is connected
 }
@@ -121,6 +123,9 @@ static double g_picture_aspect = 1920.0 / 1350.0;   // 主線程寫、各線程�
     [self loadClick];
     _wantPage = duo_shell_page_named([NSUserDefaults.standardUserDefaults stringForKey:@"DuoPanel"] ?: @"");   // 啓動參數 -DuoPanel save 等：開場後直接打開那頁 | the launch argument -DuoPanel save etc.: open that page after the opening
     [self applyPadPrefs];
+    _diagnosticKey=duo_make_pill([NSLocale.preferredLanguages.firstObject hasPrefix:@"zh"]?@"擷取報告":@"Capture report",nil,0,1,^{duo_diagnostics_request();});
+    [self.view insertSubview:_diagnosticKey belowSubview:_splash];
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(diagnosticChanged:) name:DuoDiagnosticsChanged object:nil];
     if (@available(iOS 27.1, *)) {
         __weak DuoShellVC *ws = self;
         [self.view addInteraction:[[UIHingeInteraction alloc] initWithUpdateHandler:^(UIHingeInteraction *i, UIHingeInteractionUpdate *u) { (void)i; [ws hingeChanged:u.hinge]; }]];
@@ -201,6 +206,10 @@ static double g_picture_aspect = 1920.0 / 1350.0;   // 主線程寫、各線程�
     g_picture_aspect = topH > 0 ? b.size.width / topH : k_duo_shape;
     _pictureHost.frame = _top; _picture.frame = [self pictureFrameIn:_pictureHost.bounds]; _touch.frame = _picture.frame;
     _settings.frame = b;
+    CGFloat du=MIN(1,MAX(.8,b.size.width/720)),dw=178*du;
+    _diagnosticKey.frame=CGRectMake(CGRectGetMidX(_top)-dw/2,CGRectGetMinY(_top)+MAX(self.view.safeAreaInsets.top,8)+60*du,dw,54*du);
+    _diagnosticKey.depth=4*du;_diagnosticKey.title.font=duo_font(15*du,UIFontWeightBold);
+    _diagnosticKey.hidden=_paused||_splash!=nil||!duo_diagnostics_button_visible();_diagnosticKey.enabled=!duo_diagnostics_busy();
     _panel.frame = _overlay ? b : CGRectMake(0, panelY, b.size.width, b.size.height - panelY);
     _pad.frame = _panel.bounds;
     duo_pad_arrange(_pad, _overlay, _overlay && !across && !CGRectIsNull(fold) ? [_pad convertRect:fold fromView:self.view] : CGRectNull);
@@ -320,6 +329,7 @@ UIImage *duo_band_image(CGSize size, CGFloat s) {   // 介面在 duo_shell.h；�
 // 暫停（HOME）：打開設定面板（DuoPanel.m），蓋住整個畫面；面板的「繼續」或再按 HOME 收起並繼續
 // Paused (HOME): open the settings panel (DuoPanel.m) over the whole screen; the panel's Resume, or HOME again, closes it and resumes
 - (void)setPaused:(BOOL)on {
+    [self.view setNeedsLayout];
     _paused = on;
     if (on && !_settings) {
         _settings = [[DuoPanel alloc] initWithFrame:self.view.bounds]; _settings.alpha = 0;
@@ -349,6 +359,7 @@ UIImage *duo_band_image(CGSize size, CGFloat s) {   // 介面在 duo_shell.h；�
     duo_pad_set_opacity(_pad, [u objectForKey:@"PadOpacity"] ? [u doubleForKey:@"PadOpacity"] : 0.6);
 }
 - (void)resume { duo_home_pressed(); }
+- (void)diagnosticChanged:(NSNotification *)n { (void)n; [self.view setNeedsLayout]; }
 - (void)resetInput { duo_pad_reset(_pad); }
 - (void)setPadHidden:(BOOL)h { _ctrl = h; [self applyPadPrefs]; }
 
@@ -356,6 +367,7 @@ UIImage *duo_band_image(CGSize size, CGFloat s) {   // 介面在 duo_shell.h；�
 - (void)splashDone {
     if (!_splash) return;
     UIView *sp = _splash; _splash = nil;
+    [self.view setNeedsLayout];
     [UIView animateWithDuration:0.5 delay:0 options:UIViewAnimationOptionCurveEaseInOut animations:^{ sp.alpha = 0; } completion:^(BOOL f) { (void)f; [sp removeFromSuperview]; }];
     if (_wantPage < 0) _wantPage = duo_boot_guard_page();   // 開機保護改回了設定：打開那頁說明 | the safe-boot guard put settings back: open that page to say so
     if (_wantPage >= 0) [self showPage:_wantPage];   // 快速動作、-DuoPanel 或開機保護等著的那頁 | the page a quick action, -DuoPanel or the safe-boot guard is waiting for
@@ -439,7 +451,7 @@ int duo_text_input(const char *title, const char *sub, const char *guide, const 
 }
 
 // ---- 設定頁與主畫面快速動作 | Settings pages and Home Screen quick actions ----
-static NSString *const k_page_names[DUO_PAGE_N] = {@"language", @"display", @"controls", @"save"};
+static NSString *const k_page_names[DUO_PAGE_N] = {@"language", @"display", @"controls", @"save", @"diagnostics"};
 int duo_shell_page_named(NSString *name) { for (int i = 0; i < DUO_PAGE_N; i++) if ([name isEqualToString:k_page_names[i]]) return i; return -1; }
 void duo_shell_show_page(int page) { dispatch_async(dispatch_get_main_queue(), ^{ [g_shell showPage:page]; }); }
 // 長按圖示的選單：每個設定頁一項，點了直接打開那頁（遊戲先暫停）；語言那項的副標是目前選的遊戲語言。快速動作的字跟著系統語言

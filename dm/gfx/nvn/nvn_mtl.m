@@ -30,6 +30,7 @@
 _Static_assert(DM_GAME_NVN_TEX_SLOTS <= 128 && DM_GAME_NVN_IMG_SLOTS <= 32 && DM_GAME_NVN_TEX_BASE + 8 * DM_GAME_NVN_TEX_SLOTS <= 0xA00 && DM_GAME_NVN_IMG_BASE + 8 * DM_GAME_NVN_IMG_SLOTS <= 0xA00 && DM_GAME_NVN_SAMP_BASE + 8 * 128 <= 0xA00, "遊戲檔案的 NVN 句柄表超出驅動段緩衝（0xA00）或綁定表 | the profile's NVN handle tables exceed the driver segment buffer (0xA00) or the binding tables");
 #include "nvn_hmap.h"
 #include "../../host/dm.h"
+#include "../../ios/Sources/dm_diagnostics.h"
 #import <CommonCrypto/CommonDigest.h>
 #include <stdarg.h>
 #include <mach-o/dyld.h>
@@ -793,6 +794,7 @@ static void gpu_tag_done(uint64_t f, double g0, double g1) {
     if (atomic_load(&g_gpu[k].frame) != f) return;
     double d = g1 - g0;
     if (d > 0) {
+        dm_diag_emit(DM_DIAG_GPU, f, (uint64_t)(g0 * 1e9), (uint64_t)(g1 * 1e9), 0, 0);
         atomic_fetch_add(&g_gpu[k].ns, (uint64_t)(d * 1e9));
         uint64_t s0 = (uint64_t)(g0 * 1e9), s1 = (uint64_t)(g1 * 1e9), v;
         for (v = atomic_load(&g_gpu[k].t0); s0 < v && !atomic_compare_exchange_weak(&g_gpu[k].t0, &v, s0);) {}
@@ -6481,11 +6483,16 @@ static int present_encode_m4(id<MTL4CommandBuffer> cb, id<MTLTexture> src, id<MT
 // Game picture needed by the whole-window screenshot (front end window_shot; no longer does drawViewHierarchy on a Metal layer with the display link attached): at the next present, the present thread draws the same frame
 // with the same encoding as the present (present_encode) into an offscreen texture of the same size as the swapchain, and after the GPU finishes hands out a CGImage in the completion callback (the callback does not block the present). Guarded by g_shotq_mu
 static void (^g_grab_cb)(CGImageRef img);
-void mtl_grab_next_present(void (^cb)(CGImageRef img)) { pthread_mutex_lock(&g_shotq_mu); g_grab_cb = [cb copy]; pthread_mutex_unlock(&g_shotq_mu); }
+static unsigned g_grab_max;
+void mtl_grab_next_present(void (^cb)(CGImageRef img)) { pthread_mutex_lock(&g_shotq_mu); g_grab_cb = [cb copy]; g_grab_max = 0; pthread_mutex_unlock(&g_shotq_mu); }
+// 診斷截圖限制最長邊，避免在 iPad 原生解析度另配數十 MiB。
+// Bound the diagnostic screenshot's longest side instead of allocating tens of MiB at native iPad resolution.
+void mtl_grab_next_present_scaled(unsigned max_side, void (^cb)(CGImageRef img)) { pthread_mutex_lock(&g_shotq_mu); g_grab_cb = [cb copy]; g_grab_max = max_side < 256 ? 256 : max_side > 2048 ? 2048 : max_side; pthread_mutex_unlock(&g_shotq_mu); }
 static void grab_present(id<MTLTexture> src, const int crop[4], CGSize sz) {
-    pthread_mutex_lock(&g_shotq_mu); void (^cb)(CGImageRef) = g_grab_cb; g_grab_cb = nil; pthread_mutex_unlock(&g_shotq_mu);
+    pthread_mutex_lock(&g_shotq_mu); void (^cb)(CGImageRef) = g_grab_cb; unsigned max_side = g_grab_max; g_grab_cb = nil; g_grab_max = 0; pthread_mutex_unlock(&g_shotq_mu);
     if (!cb) return;
-    size_t w = (size_t)sz.width, h = (size_t)sz.height, row = w * 4;
+    if (max_side && fmax(sz.width, sz.height) > max_side) { double scale = max_side / fmax(sz.width, sz.height); sz = CGSizeMake(fmax(1, floor(sz.width * scale)), fmax(1, floor(sz.height * scale))); }
+    size_t w = (size_t)sz.width, h = (size_t)sz.height, row = (w * 4 + 255) & ~(size_t)255;
     MTLTextureDescriptor *d = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatBGRA8Unorm width:w height:h mipmapped:NO];
     d.usage = MTLTextureUsageRenderTarget | MTLTextureUsageShaderRead; d.storageMode = MTLStorageModePrivate;
     id<MTLTexture> out = w && h ? [g_dev newTextureWithDescriptor:d] : nil; id<MTLBuffer> buf = out ? [g_dev newBufferWithLength:row * h options:MTLResourceStorageModeShared] : nil;
@@ -6494,7 +6501,8 @@ static void grab_present(id<MTLTexture> src, const int crop[4], CGSize sz) {
     id<MTLBlitCommandEncoder> b = [cb2 blitCommandEncoder];
     [b copyFromTexture:out sourceSlice:0 sourceLevel:0 sourceOrigin:MTLOriginMake(0, 0, 0) sourceSize:MTLSizeMake(w, h, 1) toBuffer:buf destinationOffset:0 destinationBytesPerRow:row destinationBytesPerImage:row * h];
     [b endEncoding];
-    [cb2 addCompletedHandler:^(id<MTLCommandBuffer> c) { (void)c;
+    [cb2 addCompletedHandler:^(id<MTLCommandBuffer> c) {
+        if(c.error){cb(NULL);return;}
         CGColorSpaceRef cs = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
         CGContextRef ctx = CGBitmapContextCreate(buf.contents, w, h, 8, row, cs, kCGImageAlphaNoneSkipFirst | kCGBitmapByteOrder32Little);
         CGImageRef img = ctx ? CGBitmapContextCreateImage(ctx) : NULL; cb(img);
@@ -6937,6 +6945,7 @@ static int present_now(const tex_t *t, double period, uint64_t frame, uint64_t t
     if (g_grab_cb) grab_present(src, crop, layer.drawableSize);   // 整窗截圖要的遊戲畫面（不加鎖先看一眼，真取在函數裡加鎖） | Game picture needed by the whole-window screenshot (peek without the lock first; the real take locks inside the function)
     uint64_t dt0 = now_ns();
     id<CAMetalDrawable> dr = supplied ? supplied : [layer nextDrawable];
+    uint64_t diag_drawable = now_ns() - dt0;
     if (!supplied) g_drawable_ns += now_ns() - dt0;
     if (!dr) return 0;
     int alloc_i = (int)(ticket % 3);
@@ -6983,13 +6992,14 @@ static int present_now(const tex_t *t, double period, uint64_t frame, uint64_t t
     [dr addPresentedHandler:^(id<MTLDrawable> d) {   // 真實呈現時刻（屏幕上真正換上這一幀的時間，CACurrentMediaTime 基準） | Actual presentation time (the time this frame is really put on screen, CACurrentMediaTime base)
         CFTimeInterval tt = d.presentedTime;
         g_pres[pn % PRING] = (pres_ent){pn, tt > 0 ? tt : -1};
+        dm_diag_emit(DM_DIAG_DISPLAY, pn, tt > 0 ? (uint64_t)(tt * 1e9) : 0, target_ts > 0 ? (uint64_t)(target_ts * 1e9) : 0, frame, 0);
     }];
     // 每張至少顯示一個出圖週期：GPU 完成時刻在 120 Hz 刷新邊界附近抖動時，不再出現「25 ms + 8.33 ms」成對的頓挫
     // Each frame is displayed for at least one present period: when the GPU completion time jitters around a 120 Hz refresh boundary, the paired "25 ms + 8.33 ms" stutter no longer appears
     if (target_ts > 0) [dr present];
     else if (period > 0) [dr presentAfterMinimumDuration:period]; else [dr present];
 #endif
-    (void)frame;
+    dm_diag_emit(DM_DIAG_PRESENT, frame, diag_drawable, now_ns() - dt0, target_ts > 0 ? (uint64_t)(target_ts * 1e9) : 0, ticket);
     return 1;
 }
 // ---------- 出圖線程 ----------
@@ -7167,6 +7177,7 @@ void mtl_link_pause(int on);
 // (hle_nvn.c nvnWindowAcquireTexture -> mtl_present_wait). Without clearing, the game cannot advance a single tick during those 2.5 seconds of waiting for the save, and the save is not written (the same pattern three times in player logs: 3 frames queued, 0 submits)
 void mtl_present_discard(int on) { atomic_store(&g_present_discard, on != 0); if (on) present_drop_for_suspend(); }
 uint64_t mtl_present(const tex_t *t, double period, const int crop[4]) {
+    uint64_t diag_begin = now_ns();
     if (atomic_load(&g_present_discard)) return 0;   // 票號 0 = 沒有待完成的上屏，取交換鏈貼圖處不等 | Ticket number 0 = no pending present; the swapchain texture acquire does not wait
     if (t) { xv_check(t->serial, 0, 0, "出圖"); if (g_xv_npresent < 128) g_xv_present[g_xv_npresent++] = t->serial; }
     static pthread_once_t once = PTHREAD_ONCE_INIT; pthread_once(&once, present_start);
@@ -7182,8 +7193,10 @@ uint64_t mtl_present(const tex_t *t, double period, const int crop[4]) {
     pq_item *it = &g_pq[g_pq_in % PQ]; *it = (pq_item){*t, period, atomic_load(&g_cur_frame), {0}, CACurrentMediaTime()};
     if (crop) memcpy(it->crop, crop, sizeof it->crop);   // 當幀狀態隨票號入隊，不在出圖線程晚讀可變window | The current frame's state is enqueued with the ticket number, rather than reading the mutable window late on the present thread
     uint64_t tk = ++g_pq_in;
+    uint64_t diag_depth = g_pq_in - g_pq_done, diag_frame = it->frame;
     pthread_cond_broadcast(&g_pq_cv);
     pthread_mutex_unlock(&g_pq_mu);
+    dm_diag_emit(DM_DIAG_ENQUEUE, diag_frame, diag_begin ? now_ns() - diag_begin : 0, period > 0 ? (uint64_t)(period * 1e9) : 0, diag_depth, tk);
     return tk;
 }
 // 丟棄期間不等：標誌置上之後才入隊的那一幀（出圖線程正好走過了標誌檢查）沒人取，等它就又卡住；它留給隨後的 mtl_drain 清

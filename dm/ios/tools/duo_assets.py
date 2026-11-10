@@ -121,6 +121,15 @@ def main():
                 made.append(file[:-4])
         except (OSError, ValueError, KeyError, subprocess.CalledProcessError) as e:
             print(f'duo_assets: no doodle wave from the game files ({e})', file=sys.stderr)
+        # 診斷彈窗使用遊戲自己的對話框遮罩；只寫到玩家的建置目錄。
+        # Diagnostic popups use the game's own dialog mask; write only into the player's build directory.
+        try:
+            fmt, w, h, blh, data = archive(romfs, 'Common_DialogBase_00')['DialogCloud_00^s']
+            if fmt >> 8 != 0x1d: raise ValueError('dialog mask is not BC4')
+            write_grey_png(os.path.join(out, 'dialog_cloud.png'), bc4_rows(deswizzle(data, (w + 3) // 4, (h + 3) // 4, 8, blh), w, h))
+            made.append('dialog_cloud')
+        except (OSError, ValueError, KeyError, subprocess.CalledProcessError) as e:
+            print(f'duo_assets: no dialog mask from the game files ({e})', file=sys.stderr)
         if catalog and launch_logo(out, catalog): made.append('LaunchLogo')
     print(' '.join(made) if made else 'nothing')
     return 0

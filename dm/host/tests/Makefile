@@ -93,6 +93,17 @@ $(B)/%.orig.bin: $(EXEFS)/% | $(B)
 $(B):
 	mkdir -p $@
 .PHONY: run tsan
+
+# 不帶遊戲的診斷環與報告儲存測試。
+# Diagnostic ring and report-store tests without game data.
+diagnostics: $(B)/t_diagnostics $(B)/t_diagnostic_store
+	$(B)/t_diagnostics
+	python3 diagnostic_store_check.py $(B)/t_diagnostic_store
+$(B)/t_diagnostics: t_diagnostics.c ../../ios/Sources/dm_diagnostics.[ch] | $(B)
+	clang -O1 -Wall -Wextra -Werror -o $@ t_diagnostics.c
+$(B)/t_diagnostic_store: t_diagnostic_store.m ../../ios/Sources/DmDiagnosticStore.[hm] | $(B)
+	clang -O1 -fobjc-arc -Wall -Wextra -o $@ t_diagnostic_store.m ../../ios/Sources/DmDiagnosticStore.m -framework Foundation
+.PHONY: diagnostics
 tsan: $(B)/t_audio_spsc_tsan
 	$(B)/t_audio_spsc_tsan
 $(B)/t_condvar: t_condvar.c t_condvar_stub.c ../hle_thread.c ../dm.h | $(B)

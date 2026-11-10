@@ -12,6 +12,7 @@
 #include <dispatch/dispatch.h>
 #include <stdatomic.h>
 #include <unistd.h>
+#include "../ios/Sources/dm_diagnostics.h"
 
 enum { FMT_PCM16 = 2, STATE_STARTED = 0, STATE_STOPPED = 1, RATE = 48000 };
 
@@ -110,6 +111,8 @@ uint64_t dm_audio_render_calls(void) { return atomic_load_explicit(&g_render_cal
 static OSStatus au_render(void *ctx, AudioUnitRenderActionFlags *f, const AudioTimeStamp *ts, UInt32 bus, UInt32 frames, AudioBufferList *bl) {
     (void)f; (void)ts; (void)bus; (void)frames;
     aout *a = ctx;
+    uint64_t diag_begin = now_ns(), under_before = atomic_load_explicit(&a->under_b, memory_order_relaxed);
+    uint32_t diag_queue = atomic_load_explicit(&a->q_tail, memory_order_acquire) - atomic_load_explicit(&a->q_head, memory_order_relaxed);
     atomic_fetch_add_explicit(&g_render_calls, 1, memory_order_relaxed);
     {   // 每個輸出每 2000 次回調記一行：每次要多少幀、回調開始時待播多少塊、欠載次數（換新設備時看這行；docs/agents/03-bringup.md「iOS 上爆音」）。
         // 按輸出分開記：同時開著兩個輸出時合在一起的數會誤導（一個餵滿、一個沒人餵，合起來像「每隔一次欠載」）
@@ -121,6 +124,10 @@ static OSStatus au_render(void *ctx, AudioUnitRenderActionFlags *f, const AudioT
             LOG("audio #%d 聲卡回調 %llu 次：每次 %u–%u 幀，回調時待播均 %.1f 塊；這 2000 次裡欠載 %llu 次、補零 %.1f ms", a->id, (unsigned long long)a->st_calls, a->st_fmin, a->st_fmax, a->st_qsum / 2000.0,
                 (unsigned long long)(un - a->st_u0), (ubb - a->st_ub0) / (2.0 * a->ch) / (RATE / 1000.0)); a->st_fmin = ~0u; a->st_fmax = 0; a->st_qsum = 0; a->st_u0 = un; a->st_ub0 = ubb; } }
     pull(a, bl->mBuffers[0].mData, bl->mBuffers[0].mDataByteSize);
+    // 回調只寫固定大小事件；不配置、不寫磁碟，也不等待擷取中的鎖。
+    // The callback writes a fixed-size event only: no allocation, disk I/O, or waiting for capture locks.
+    dm_diag_emit(DM_DIAG_AUDIO, a->id, frames, diag_queue, diag_begin ? now_ns() - diag_begin : 0,
+                 atomic_load_explicit(&a->under_b, memory_order_relaxed) - under_before);
     { static int mute = -1; if (mute < 0) { const char *e = getenv("DM_AUDIO_MUTE"); mute = e && atoi(e); }   // 診斷：走真出聲的整條路（AudioUnit 回調節奏、切後台接手），但輸出靜音（Mac 上測生命週期不吵人） | diagnostic: the whole real-output path (AudioUnit callback pacing, background take-over) but with the output silenced (lifecycle tests on the Mac without noise)
       if (mute) memset(bl->mBuffers[0].mData, 0, bl->mBuffers[0].mDataByteSize); }
     return noErr;
