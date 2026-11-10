@@ -53,6 +53,14 @@ On an iPhone or iPad, see [Install on your own iPhone or iPad](#install-on-your-
 - **13 languages:** the game follows your Mac's language; switch it under **Game → Game Language**.
 - **Saves** live in `~/Library/Application Support/nxnative/010051F0207B2000/save`.
 
+### Settings audio (iPhone and iPad)
+
+HOME still pauses the game. The settings panel plays a separate loop from the game's Mii editor, with the game's cursor, confirm and cancel sounds. **Display → Menu Music / Menu Sounds** turns each off independently. On Resume, menu audio fades to silence in 10 ms and stops before game audio resumes; there is no crossfade. Menu audio stops when the app loses focus.
+
+The build reads `menu_audio.tsv` in the selected game profile and decodes the assets from your own extracted RomFS. The WAV files are local build outputs, not repository content. Missing or unsupported audio leaves the settings silent; it does not prevent pause. To choose another track, change the profile manifest and rebuild. This does not add audio playback while the app is in the background.
+
+Decoder tests: `python3 -m unittest discover -s dm/ios/tools/tests -v` (synthetic audio only; no game data required).
+
 ## How it works
 
 - **A rewriter** changes only the instructions that cannot run under Apple's kernel (x18, thread pointers, `svc`, timers).

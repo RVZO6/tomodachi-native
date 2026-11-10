@@ -89,6 +89,7 @@ void duo_capture_pressed(void);
 enum { PILL_PLAIN, PILL_PICKED, PILL_CONFIRM };
 @interface DuoPill : UIControl
 @property (nonatomic) int style;
+@property (nonatomic, copy) NSString *soundRole;
 @property (nonatomic) CGFloat depth;
 @property (nonatomic, readonly) UILabel *title, *sub;
 @property (nonatomic, strong) UIImage *portraitImage;
@@ -132,3 +133,9 @@ void duo_game_quit(void);                              // 設定裡的「關閉�
 int duo_game_save_snapshot(const char *dst);           // 存檔已提交版的快照到 dst：0 成功，-1 宿主還沒掛存檔，其他 = errno | snapshot of the committed save to dst: 0 done, -1 the host has not mounted the save, else errno
 
 // 存檔備份（DuoSave.m）：只搬、只拷，不刪 | Save backups (DuoSave.m): moves and copies only, never deletes
+// 設定音效只使用本機遊戲資料；close 完成後才可繼續客體。
+// Settings audio uses local game data only; resume the guest only after close completes.
+void duo_menu_audio_open(BOOL open);
+void duo_menu_audio_close(void (^completion)(void));
+void duo_menu_audio_effect(NSString *role);
+void duo_menu_audio_refresh(void);

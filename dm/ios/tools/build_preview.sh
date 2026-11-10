@@ -27,6 +27,9 @@ ICON=$(dirname "$ROMFS")/icon.jpg
 A=$G/Assets.xcassets; mkdir -p $A
 DUO=$(python3 -I tools/duo_assets.py "$ROMFS" $G/duo "$ICON" --launch $A) || die "duo_assets.py"; t "game pictures: $DUO"
 cp "$DM/third_party/zstd/LICENSE" "$G/duo/Zstandard-LICENSE.txt" || die "copy Zstandard license"
+# 設定音效只從所選遊戲的本機資料取。
+# Settings audio comes only from the selected local game data.
+[ ! -f "$DM/games/$GAME/menu_audio.tsv" ] || python3 -I tools/duo_audio.py "$ROMFS" "$DM/games/$GAME/menu_audio.tsv" $G/duo || die "duo_audio.py"
 cp "$STILLS"/picture*.png $G/duo/ || die "copy stills"
 for f in "$STILLS"/hinge_close.*; do [ -f "$f" ] && cp "$f" $G/duo/ && t "closing sound: $f"; done
 A=$G/Assets.xcassets; mkdir -p $A/LaunchYellow.colorset && printf '{"info":{"author":"xcode","version":1}}\n' > $A/Contents.json

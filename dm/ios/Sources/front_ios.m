@@ -148,11 +148,26 @@ void front_run(void (*guest)(void)) { guest(); }   // 已在 main.m 的大棧線
 // 外殼的觸控手把與實體手把合併後交給宿主（DmGamepad.m 的 duo_pad_publish 是強實現）；HOME = 暫停並打開設定面板 / 收起並繼續（同 Mac 的暫停）；截圖 = 遊戲畫面原解析度存進 Documents/Screenshots（「檔案」App 看得到）
 // The shell's touch controller merged with physical controllers goes to the host (DmGamepad.m's duo_pad_publish is the strong version); HOME = pause and open the settings panel / close it and resume (same as the Mac's pause); capture = the game picture at native resolution saved into Documents/Screenshots (visible in the Files app)
 void duo_home_pressed(void) {
-    g_paused = !g_paused;
-    LOG("前端：%s", g_paused ? "暫停" : "繼續");
-    if (g_paused) { duo_shell_reset_input(); dm_focus_set(2); dm_audio_suspend(1); guest_clock_freeze_for(3, 1); dm_gfx_suspend(1); }
-    else { dm_gfx_suspend(0); guest_clock_freeze_for(3, 0); front_ios_audio_session(); dm_audio_suspend(0); dm_focus_set(1); }   // 暫停中可能進過後台，音頻會話要重設（同回前台） | it may have been in the background while paused, so reset the audio session (as on return to the foreground)
-    duo_shell_set_paused(g_paused);
+    static BOOL closing;
+    if (closing) return;
+    if (!g_paused) {
+        g_paused = YES;
+        LOG("前端：暫停");
+        duo_shell_reset_input(); dm_focus_set(2); dm_audio_suspend(1); guest_clock_freeze_for(3, 1); dm_gfx_suspend(1);
+        duo_shell_set_paused(YES);
+    } else {
+        closing = YES;
+        duo_menu_audio_close(^{
+            closing = NO;
+            // 收邊時若失活，仍維持暫停，避免在後台提交 GPU 工作。
+            // If focus is lost during the short fade, stay paused to avoid background GPU submissions.
+            if (UIApplication.sharedApplication.applicationState != UIApplicationStateActive) { duo_menu_audio_open(YES); return; }
+            g_paused = NO;
+            LOG("前端：繼續");
+            dm_gfx_suspend(0); guest_clock_freeze_for(3, 0); front_ios_audio_session(); dm_audio_suspend(0); dm_focus_set(1);
+            duo_shell_set_paused(NO);
+        });
+    }
 }
 void duo_capture_pressed(void) {
     if (g_paused) { LOG("前端：暫停中不截圖（暫停時不出圖）"); return; }   // 同 Mac：截圖在下一次出圖時才拍，暫停中拍不到 | as on the Mac: the shot is taken at the next present, which never comes while paused

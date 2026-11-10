@@ -77,6 +77,9 @@ else t "no app icon ($ICON not found): the home-screen icon stays blank"; fi
 # The launch screen's yellow (#FFC100) goes into the asset catalog for UILaunchScreen in Info.plist
 mkdir -p Gen/duo Gen/Assets.xcassets/LaunchYellow.colorset || die "mkdir Gen/duo"
 DUO=$(python3 -I tools/duo_assets.py "$ROMFS" Gen/duo "$ICON" --launch Gen/Assets.xcassets) || die "duo_assets.py"; t "duo pictures: $DUO"
+# 設定音效從所選遊戲的本機資料取，沒有音效仍可暫停。
+# Settings audio comes from the selected game locally; pause still works without audio.
+[ ! -f "$GD/menu_audio.tsv" ] || python3 -I tools/duo_audio.py "$ROMFS" "$GD/menu_audio.tsv" Gen/duo || die "duo_audio.py"
 for f in "${DUO_LOCAL:-$W/demo/preview}"/hinge_close.*; do [ -f "$f" ] && cp "$f" Gen/duo/ && t "closing sound: $f"; done
 printf '{"colors":[{"color":{"color-space":"srgb","components":{"red":"1.000","green":"0.757","blue":"0.000","alpha":"1.000"}},"idiom":"universal"}],"info":{"author":"xcode","version":1}}\n' > Gen/Assets.xcassets/LaunchYellow.colorset/Contents.json
 xcodegen generate -q > /dev/null || die "xcodegen"

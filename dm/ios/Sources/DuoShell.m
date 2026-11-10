@@ -21,7 +21,12 @@ static const CGFloat k_refl_alpha_live = 0.22;        // 遊戲畫面（不模�
 static const CGFloat k_band_frac = 0.25;              // 底部波浪佔下半高度 | the bottom wave's share of the lower half
 
 // 預覽 App 用：HOME 只開關設定面板（遊戲 App 另給強實現，同時暫停遊戲） | for the preview app: HOME only opens and closes the settings panel (the game app provides a strong version that also pauses the game)
-__attribute__((weak)) void duo_home_pressed(void) { static BOOL p; p = !p; fprintf(stderr, "duo: HOME\n"); duo_shell_set_paused(p); }
+__attribute__((weak)) void duo_home_pressed(void) {
+    static BOOL p, closing;
+    if (closing) return;
+    if (!p) { p = YES; duo_shell_set_paused(YES); }
+    else { closing = YES; duo_menu_audio_close(^{ p = NO; closing = NO; duo_shell_set_paused(NO); }); }
+}
 __attribute__((weak)) void duo_capture_pressed(void) { fprintf(stderr, "duo: 截圖鍵\n"); }
 
 // ---- 點畫面 = 觸屏 | Tapping the picture = the touchscreen ----
@@ -325,6 +330,7 @@ UIImage *duo_band_image(CGSize size, CGFloat s) {   // 介面在 duo_shell.h；�
 // Paused (HOME): open the settings panel (DuoPanel.m) over the whole screen; the panel's Resume, or HOME again, closes it and resumes
 - (void)setPaused:(BOOL)on {
     _paused = on;
+    duo_menu_audio_open(on);
     if (on && !_settings) {
         _settings = [[DuoPanel alloc] initWithFrame:self.view.bounds]; _settings.alpha = 0;
         __weak DuoShellVC *ws = self;
