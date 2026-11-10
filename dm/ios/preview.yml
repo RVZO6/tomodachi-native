@@ -10,6 +10,7 @@ targets:
     type: application
     platform: iOS
     sources:
+      - Sources/DuoMenuAudio.m
       - Sources/DuoShell.m
       - Sources/DuoPad.m
       - Sources/DuoTypeCard.m

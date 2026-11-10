@@ -127,6 +127,7 @@ static UIBezierPath *wobble(CGRect r) {   // 手繪感的膠囊：上下兩邊�
 
 @interface DuoPill : UIControl
 @property (nonatomic) int style;
+@property (nonatomic, copy) NSString *soundRole;
 @property (nonatomic) CGFloat depth;
 @property (nonatomic, readonly) UILabel *title, *sub;
 @end
@@ -214,7 +215,7 @@ static UIBezierPath *wobble(CGRect r) {   // 手繪感的膠囊：上下兩邊�
     return self;
 }
 - (void)resumeTapped { _confirm = nil; _reverted = nil; if (self.resume) self.resume(); }
-- (void)tabTapped:(DuoPill *)t { if (t.tag == _page && !_confirm) return; [[UISelectionFeedbackGenerator new] selectionChanged]; self.page = t.tag; }
+- (void)tabTapped:(DuoPill *)t { duo_menu_audio_effect(@"select"); if (t.tag == _page && !_confirm) return; [[UISelectionFeedbackGenerator new] selectionChanged]; self.page = t.tag; }
 - (void)setPage:(NSInteger)p { _page = MAX(0, MIN(p, DUO_PAGE_N - 1)); _confirm = nil; _flash = nil; _scroll.contentOffset = CGPointZero; [self relayout]; }
 - (void)refresh { _confirm = nil; _flash = nil; NSString *f = duo_save_take_failure(); if (f) { _failed = f; _page = DUO_PAGE_SAVE; } [self relayout]; }
 - (void)relayout { _laidW = 0; [self setNeedsLayout]; [self layoutIfNeeded]; UIAccessibilityPostNotification(UIAccessibilityLayoutChangedNotification, nil); }
@@ -228,7 +229,7 @@ static UIBezierPath *wobble(CGRect r) {   // 手繪感的膠囊：上下兩邊�
     if (sub.length) { b.sub.hidden = NO; b.sub.text = sub; b.sub.font = duo_font(14 * _u, UIFontWeightSemibold); }
     b.accessibilityLabel = sub.length ? [NSString stringWithFormat:@"%@，%@", t, sub] : t;
     b.accessibilityTraits = UIAccessibilityTraitButton | (style == PILL_PICKED ? UIAccessibilityTraitSelected : 0);
-    if (tap) [b addAction:[UIAction actionWithHandler:^(UIAction *a) { (void)a; tap(); }] forControlEvents:UIControlEventTouchUpInside];
+    if (tap) [b addAction:[UIAction actionWithHandler:^(UIAction *a) { DuoPill *sender = (DuoPill *)a.sender; duo_menu_audio_effect(sender.soundRole ?: (sender.style == PILL_CONFIRM ? @"confirm" : @"select")); tap(); }] forControlEvents:UIControlEventTouchUpInside];
     return b;
 }
 // 第 i 欄的位置和寬：有直的摺痕、欄數是偶數時，一半在摺痕左邊、一半在右邊 | column i's position and width: with a vertical fold and an even column count, half sit left of the fold and half right of it
@@ -278,7 +279,9 @@ static UIBezierPath *wobble(CGRect r) {   // 手繪感的膠囊：上下兩邊�
     UILabel *b = [self label:band font:bf color:duo_rgb(DUO_NAVY) align:NSTextAlignmentCenter]; b.frame = CGRectMake(20 * _u, _y + 17 * _u, _bodyW - 40 * _u, bh - 34 * _u); _y += bh + 16 * _u;
     if (note.length) { UILabel *n = [self label:note font:duo_font(17 * _u, UIFontWeightBold) color:duo_rgb(k_note) align:NSTextAlignmentCenter]; _y += n.frame.size.height + 22 * _u; }
     CGFloat saveW = _bodyW; _bodyW = MIN(_bodyW, 560 * _u); CGFloat x0 = (saveW - _bodyW) / 2, y0 = _y;
-    [self grid:@[[self pill:L(@"取消", @"Cancel") sub:nil style:PILL_PLAIN tap:^{ DuoPanel *s = ws; s->_confirm = nil; [s changed]; }],
+    DuoPill *cancel = [self pill:L(@"取消", @"Cancel") sub:nil style:PILL_PLAIN tap:^{ DuoPanel *s = ws; s->_confirm = nil; [s changed]; }];
+    cancel.soundRole = @"back";
+    [self grid:@[cancel,
                  [self pill:yes sub:nil style:PILL_CONFIRM tap:action]] cols:2 tall:60];
     for (UIView *v in _body.subviews) if (v.frame.origin.y >= y0 - 1) v.frame = CGRectOffset(v.frame, x0, 0);
     _bodyW = saveW;
@@ -314,6 +317,15 @@ static UIBezierPath *wobble(CGRect r) {   // 手繪感的膠囊：上下兩邊�
     [self grid:@[[self pill:L(@"開", @"On") sub:nil style:up ? PILL_PICKED : PILL_PLAIN tap:^{ [ud() setBool:YES forKey:@"Upscale"]; duo_game_set_upscale(1); [ws changed]; }],
                  [self pill:L(@"關", @"Off") sub:nil style:up ? PILL_PLAIN : PILL_PICKED tap:^{ [ud() setBool:NO forKey:@"Upscale"]; duo_game_set_upscale(0); [ws changed]; }]] cols:2 tall:56];
     [self note:L(@"畫面放大到螢幕大小時，邊緣和文字比較清楚。", @"Keeps edges and text sharp when the picture is enlarged to fit the screen.")];
+    [self heading:L(@"設定選單音樂", @"Menu Music")];
+    BOOL music = ![ud() boolForKey:@"MenuMusicMuted"];
+    [self grid:@[[self pill:L(@"開", @"On") sub:nil style:music ? PILL_PICKED : PILL_PLAIN tap:^{ [ud() setBool:NO forKey:@"MenuMusicMuted"]; duo_menu_audio_refresh(); [ws changed]; }],
+                 [self pill:L(@"關", @"Off") sub:nil style:music ? PILL_PLAIN : PILL_PICKED tap:^{ [ud() setBool:YES forKey:@"MenuMusicMuted"]; duo_menu_audio_refresh(); [ws changed]; }]] cols:2 tall:56];
+    [self note:L(@"選單音樂播放時，遊戲仍然暫停。", @"The game stays paused while menu music plays.")];
+    [self heading:L(@"設定按鍵音效", @"Menu Sounds")];
+    BOOL sounds = ![ud() boolForKey:@"MenuSoundsMuted"];
+    [self grid:@[[self pill:L(@"開", @"On") sub:nil style:sounds ? PILL_PICKED : PILL_PLAIN tap:^{ [ud() setBool:NO forKey:@"MenuSoundsMuted"]; duo_menu_audio_refresh(); [ws changed]; }],
+                 [self pill:L(@"關", @"Off") sub:nil style:sounds ? PILL_PLAIN : PILL_PICKED tap:^{ [ud() setBool:YES forKey:@"MenuSoundsMuted"]; duo_menu_audio_refresh(); [ws changed]; }]] cols:2 tall:56];
     if (!duo_game_option_known("fps60")) return;
     [self heading:L(@"幀率", @"Frame Rate")];
     int fps = fps_pref();

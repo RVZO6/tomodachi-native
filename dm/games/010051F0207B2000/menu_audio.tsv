@@ -1,0 +1,8 @@
+# 設定面板：本機遊戲資料來源；音樂保留原始循環區段。
+# Settings panel: local game asset sources; music retains the original loop region.
+# 欄位：用途、RomFS 路徑、BARS 成員名稱（獨立 BWAV 用 -）。
+# role<TAB>RomFS path<TAB>BARS member, or - for a standalone BWAV
+music	Sound/Resource/Stream/BGM_MiiEditor_01a.bwav	-
+select	Sound/Resource/System_Static.Product.100.bars.zs	SE_UI_Cursor
+confirm	Sound/Resource/System_Static.Product.100.bars.zs	SE_UI_Decide1s
+back	Sound/Resource/System_Static.Product.100.bars.zs	SE_UI_Close_s

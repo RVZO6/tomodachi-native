@@ -113,3 +113,10 @@ NSString *duo_save_pending(void);                      // 下次開機要做的�
 void duo_save_set_pending(NSString *action);
 void duo_save_apply_pending(void);                     // main.m 開機時、宿主掛存檔之前調 | called by main.m at boot, before the host mounts the save
 NSString *duo_save_take_failure(void);                 // 上次開機的待辦沒做成：@"restore" / @"fresh"，取一次就清掉；沒有 = nil | the last boot-time action failed: @"restore" / @"fresh", cleared once taken; none = nil
+
+// 設定音效只使用本機遊戲資料；close 完成後才可繼續客體。
+// Settings audio uses local game data only; resume the guest only after close completes.
+void duo_menu_audio_open(BOOL open);
+void duo_menu_audio_close(void (^completion)(void));
+void duo_menu_audio_effect(NSString *role);
+void duo_menu_audio_refresh(void);
