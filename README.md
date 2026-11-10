@@ -75,6 +75,10 @@ Details per part are in [How it works in detail](#how-it-works-in-detail).
 
 **Will other games come?** This fork covers Tomodachi Life only. Super Mario Bros. Wonder and Fire Emblem Engage run with [nxnative](https://github.com/seedds/smbw-mobile), the project this fork continues. To bring up another game, see [Port another game](#port-another-game).
 
+## Custom Miis on iPad
+
+Use **HOME → Settings → Save Data → Import Mii** to select a ShareMii `.ltd` v3 file directly from Files. Select an initialized islander, confirm, then close and reopen the game. A verified full-save backup is made before applying the replacement. **Export Mii** creates a `.ltd` through Files. Real portrait rendering is not implemented; the centered silhouette fallback is used. See [supported formats, safety checks and tests](docs/MII_IMPORTER.md).
+
 ## Known issues
 
 - Clicks have only been tried on the opening menus (naming the island and its confirmation). If a click does nothing in a later scene, add `mouse:Left A` to `keymap.txt` to move the hand with the mouse instead.

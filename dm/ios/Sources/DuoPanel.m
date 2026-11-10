@@ -14,6 +14,8 @@
 #include <stdio.h>
 #include <errno.h>
 #include "duo_shell.h"
+#import <CoreText/CoreText.h>
+#include "duo_mii.h"
 
 __attribute__((weak)) int duo_game_option_known(const char *name) { (void)name; return 0; }
 __attribute__((weak)) void duo_game_set_upscale(int on) { (void)on; }
@@ -110,7 +112,6 @@ static NSString *guard_name(NSString *k) {
 // 選中的換成黃色（#FFE353）加淺色波浪紋（#FFF0A8）；確認、會動到存檔的那一步用確認橘。按下時鍵面往下沉、蓋住下緣，同外殼的鍵
 // Sampled from the game's own menus (region of residence, island name): a white capsule whose outline wobbles slightly as if hand-drawn, a grey lower edge (#E5E5E5) and a darker-yellow drop on the yellow (#E7AE00);
 // the picked one turns yellow (#FFE353) with pale wavy stripes (#FFF0A8); the confirm step, and any step that touches the save, uses the confirm orange. Pressing sinks the face over the edge, as the shell's keys do
-enum { PILL_PLAIN, PILL_PICKED, PILL_CONFIRM };
 static const uint32_t k_pick = 0xFFE353, k_pick_stripe = 0xFFF0A8, k_pick_lip = 0xECC23A, k_note = 0xF2660D, k_rule = 0xFFA100;
 
 static UIBezierPath *wobble(CGRect r) {   // 手繪感的膠囊：上下兩邊各有一點起伏 | a hand-drawn-looking capsule: the top and bottom edges rise and dip a little
@@ -125,27 +126,52 @@ static UIBezierPath *wobble(CGRect r) {   // 手繪感的膠囊：上下兩邊�
     return p;
 }
 
-@interface DuoPill : UIControl
-@property (nonatomic) int style;
-@property (nonatomic) CGFloat depth;
-@property (nonatomic, readonly) UILabel *title, *sub;
+// UILabel 的行高含字體留白；依真正的字形範圍畫，避免看起來偏上／偏旁。
+// UILabel line metrics include font padding; draw by glyph bounds so the visible text is centered.
+@interface DuoInkLabel : UILabel @end
+@implementation DuoInkLabel
+- (void)drawTextInRect:(CGRect)rect {
+    (void)rect; if (!self.text.length) return;
+    CGRect bounds=self.bounds; UIFont *font=self.font ?: [UIFont systemFontOfSize:17];
+    CTFontRef ct=CTFontCreateWithName((__bridge CFStringRef)font.fontName,font.pointSize,NULL);
+    NSDictionary *attrs=@{(__bridge id)kCTFontAttributeName:(__bridge id)ct,(__bridge id)kCTForegroundColorAttributeName:(__bridge id)self.textColor.CGColor};
+    CTLineRef line=CTLineCreateWithAttributedString((__bridge CFAttributedStringRef)[[NSAttributedString alloc] initWithString:self.text attributes:attrs]);
+    CGRect ink=CTLineGetBoundsWithOptions(line,kCTLineBoundsUseGlyphPathBounds);
+    if(self.adjustsFontSizeToFitWidth && ink.size.width>bounds.size.width && ink.size.width>0){
+        CGFloat scale=MAX(self.minimumScaleFactor,bounds.size.width/ink.size.width);
+        CFRelease(line);CFRelease(ct);ct=CTFontCreateWithName((__bridge CFStringRef)font.fontName,font.pointSize*scale,NULL);
+        attrs=@{(__bridge id)kCTFontAttributeName:(__bridge id)ct,(__bridge id)kCTForegroundColorAttributeName:(__bridge id)self.textColor.CGColor};
+        line=CTLineCreateWithAttributedString((__bridge CFAttributedStringRef)[[NSAttributedString alloc] initWithString:self.text attributes:attrs]);ink=CTLineGetBoundsWithOptions(line,kCTLineBoundsUseGlyphPathBounds);
+    }
+    if(ink.size.width>bounds.size.width){
+        CTLineRef ellipsis=CTLineCreateWithAttributedString((__bridge CFAttributedStringRef)[[NSAttributedString alloc] initWithString:@"…" attributes:attrs]);
+        CTLineRef shortened=CTLineCreateTruncatedLine(line,bounds.size.width,kCTLineTruncationEnd,ellipsis);CFRelease(ellipsis);
+        if(shortened){CFRelease(line);line=shortened;ink=CTLineGetBoundsWithOptions(line,kCTLineBoundsUseGlyphPathBounds);}
+    }
+    if(CGRectIsNull(ink)||CGRectIsInfinite(ink)||!isfinite(ink.origin.x)||!isfinite(ink.origin.y))ink=CTLineGetBoundsWithOptions(line,0);
+    CGContextRef c=UIGraphicsGetCurrentContext();CGContextSaveGState(c);CGContextClipToRect(c,bounds);CGContextTranslateCTM(c,0,bounds.size.height);CGContextScaleCTM(c,1,-1);
+    CGContextSetTextPosition(c,(bounds.size.width-ink.size.width)/2-ink.origin.x,(bounds.size.height-ink.size.height)/2-ink.origin.y);CTLineDraw(line,c);CGContextRestoreGState(c);CFRelease(line);CFRelease(ct);
+}
 @end
+
 @implementation DuoPill {
-    CAShapeLayer *_drop, *_lip, *_face, *_stripes, *_stripeMask;
+    CAShapeLayer *_drop, *_lip, *_face, *_stripes, *_stripeMask; UIImageView *_portrait;
 }
 - (instancetype)initWithFrame:(CGRect)f {
     if ((self = [super initWithFrame:f])) {
         _drop = [CAShapeLayer layer]; _lip = [CAShapeLayer layer]; _face = [CAShapeLayer layer]; _stripes = [CAShapeLayer layer]; _stripeMask = [CAShapeLayer layer];
         _stripes.fillColor = nil; _stripes.lineCap = kCALineCapRound; _stripes.mask = _stripeMask;
         for (CALayer *l in @[_drop, _lip, _face, _stripes]) [self.layer addSublayer:l];
-        _title = [UILabel new]; _title.textAlignment = NSTextAlignmentCenter; _title.adjustsFontSizeToFitWidth = YES; _title.minimumScaleFactor = 0.7; [self addSubview:_title];
-        _sub = [UILabel new]; _sub.textAlignment = NSTextAlignmentCenter; _sub.hidden = YES; [self addSubview:_sub];
+        _title = [DuoInkLabel new]; _title.textAlignment = NSTextAlignmentCenter; _title.adjustsFontSizeToFitWidth = YES; _title.minimumScaleFactor = 0.7; [self addSubview:_title];
+        _sub = [DuoInkLabel new]; _sub.textAlignment = NSTextAlignmentCenter; _sub.hidden = YES; [self addSubview:_sub];
         _title.userInteractionEnabled = _sub.userInteractionEnabled = NO;
-        _depth = 4; self.isAccessibilityElement = YES;
+        _portrait=[UIImageView new];_portrait.contentMode=UIViewContentModeScaleAspectFit;_portrait.userInteractionEnabled=NO;_portrait.hidden=YES;[self addSubview:_portrait];
+        _depth = 4; self.isAccessibilityElement = YES; self.accessibilityTraits=UIAccessibilityTraitButton;
     }
     return self;
 }
 - (void)setStyle:(int)s { _style = s; [self setNeedsLayout]; }
+- (void)setPortraitImage:(UIImage *)image { _portraitImage=image;_portrait.image=image;_portrait.hidden=!image;[self setNeedsLayout]; }
 - (void)layoutSubviews {
     [super layoutSubviews];
     [CATransaction begin]; [CATransaction setDisableActions:YES];
@@ -168,6 +194,7 @@ static UIBezierPath *wobble(CGRect r) {   // 手繪感的膠囊：上下兩邊�
     [CATransaction commit];
     UIColor *textC = _style == PILL_CONFIRM ? UIColor.whiteColor : duo_rgb(DUO_NAVY);
     _title.textColor = textC; _sub.textColor = [textC colorWithAlphaComponent:0.62];
+    if(_portrait.image){CGFloat ph=MIN(h*.73,44*self.bounds.size.height/70);_portrait.frame=CGRectMake(h*.25,sink+(h-ph)/2,ph,ph);}
     CGFloat pad = h * 0.45, th = _sub.hidden ? h : h * 0.56;
     _title.frame = CGRectMake(pad, sink + (_sub.hidden ? 0 : h * 0.12), w - 2 * pad, _sub.hidden ? h : th - h * 0.06);
     _sub.frame = CGRectMake(pad, sink + h * 0.52, w - 2 * pad, h * 0.34);
@@ -193,6 +220,7 @@ static UIBezierPath *wobble(CGRect r) {   // 手繪感的膠囊：上下兩邊�
     NSString *_failed;      // 上次開機的還原 / 從頭開始沒做成（duo_save_take_failure） | the last boot's restore / start over failed (duo_save_take_failure)
     NSArray *_reverted;     // 開機保護改回的設定（SafeBootReverted） | settings put back by the safe-boot guard (SafeBootReverted)
     NSURL *_export;
+    DuoMiiPanel *_mii;
 }
 - (instancetype)initWithFrame:(CGRect)f {
     if ((self = [super initWithFrame:f])) {
@@ -213,10 +241,10 @@ static UIBezierPath *wobble(CGRect r) {   // 手繪感的膠囊：上下兩邊�
     }
     return self;
 }
-- (void)resumeTapped { _confirm = nil; _reverted = nil; if (self.resume) self.resume(); }
+- (void)resumeTapped { _mii=nil; _confirm = nil; _reverted = nil; if (self.resume) self.resume(); }
 - (void)tabTapped:(DuoPill *)t { if (t.tag == _page && !_confirm) return; [[UISelectionFeedbackGenerator new] selectionChanged]; self.page = t.tag; }
-- (void)setPage:(NSInteger)p { _page = MAX(0, MIN(p, DUO_PAGE_N - 1)); _confirm = nil; _flash = nil; _scroll.contentOffset = CGPointZero; [self relayout]; }
-- (void)refresh { _confirm = nil; _flash = nil; NSString *f = duo_save_take_failure(); if (f) { _failed = f; _page = DUO_PAGE_SAVE; } [self relayout]; }
+- (void)setPage:(NSInteger)p { _mii=nil; _page = MAX(0, MIN(p, DUO_PAGE_N - 1)); _confirm = nil; _flash = nil; _scroll.contentOffset = CGPointZero; [self relayout]; }
+- (void)refresh { _mii=nil; _confirm = nil; _flash = nil; NSString *f = duo_save_take_failure(); if (f) { _failed = f; _page = DUO_PAGE_SAVE; } [self relayout]; }
 - (void)relayout { _laidW = 0; [self setNeedsLayout]; [self layoutIfNeeded]; UIAccessibilityPostNotification(UIAccessibilityLayoutChangedNotification, nil); }
 - (void)changed { [[UISelectionFeedbackGenerator new] selectionChanged]; [self relayout]; }
 - (void)ask:(NSString *)what { _confirm = what; _scroll.contentOffset = CGPointZero; [self changed]; }
@@ -346,6 +374,11 @@ static UIBezierPath *wobble(CGRect r) {   // 手繪感的膠囊：上下兩邊�
 - (NSString *)backupTitle:(NSString *)name { for (NSDictionary *b in duo_backups()) if ([b[@"name"] isEqualToString:name]) return [self when:b[@"date"]]; return name; }
 - (void)pageSave {
     __weak DuoPanel *ws = self;
+    if(_mii){CGFloat h=[_mii heightForWidth:_bodyW unit:_u];_mii.frame=CGRectMake(0,_y,_bodyW,h);[_body addSubview:_mii];_y+=h;return;}
+    [self heading:L(@"Mii", @"Miis")];
+    [self grid:@[[self pill:L(@"匯入 Mii", @"Import Mii") sub:nil style:PILL_PLAIN tap:^{[ws openMii:NO];}],
+                 [self pill:L(@"匯出 Mii", @"Export Mii") sub:nil style:PILL_PLAIN tap:^{[ws openMii:YES];}]] cols:2 tall:56];
+    NSString *miiResult=duo_mii_take_result();if(miiResult)_flash=miiResult;
     if ([_confirm isEqualToString:@"fresh"]) {
         [self dialog:L(@"要從頭開始嗎？", @"Start over?") band:L(@"目前的存檔會移到備份", @"Your current save moves to Backups")
                 note:L(@"不會刪除。下次開啟遊戲時從頭開始。", @"Nothing is deleted. The game starts from the beginning the next time you open it.")
@@ -359,11 +392,12 @@ static UIBezierPath *wobble(CGRect r) {   // 手繪感的膠囊：上下兩邊�
                  yes:L(@"還原", @"Restore") action:^{ DuoPanel *s = ws; s->_confirm = nil; duo_save_set_pending([@"restore:" stringByAppendingString:name]); [s changed]; }];
         return;
     }
-    if (_failed) [self warn:[_failed isEqualToString:@"restore"] ? L(@"上次的還原沒有完成，存檔沒有變。", @"The last restore didn't finish, so your save didn't change.")
+    if ([_failed isEqualToString:@"mii"]) [self warn:L(@"上次 Mii 匯入未完成；請查看結果或使用匯入前的備份。",@"The last Mii import did not finish. Check the result or the before-import backup.")];
+    else if (_failed) [self warn:[_failed isEqualToString:@"restore"] ? L(@"上次的還原沒有完成，存檔沒有變。", @"The last restore didn't finish, so your save didn't change.")
                                                                   : L(@"上次的從頭開始沒有完成，存檔沒有變。", @"Starting over didn't finish last time, so your save didn't change.")];
     NSString *pend = duo_save_pending();
     if (pend) {
-        NSString *what = [pend hasPrefix:@"restore:"] ? [NSString stringWithFormat:L(@"還原 %@ 的備份", @"restore the backup from %@"), [self backupTitle:[pend substringFromIndex:8]]] : L(@"從頭開始", @"start over");
+        NSString *what = [pend hasPrefix:@"restore:"] ? [NSString stringWithFormat:L(@"還原 %@ 的備份", @"restore the backup from %@"), [self backupTitle:[pend substringFromIndex:8]]] : [pend hasPrefix:@"mii:"] ? L(@"匯入排程的 Mii", @"import the queued Mii") : L(@"從頭開始", @"start over");
         [self heading:L(@"下次開啟遊戲時", @"Next Time You Open the Game")];
         [self warn:[NSString stringWithFormat:L(@"遊戲會%@，目前的存檔會先移到備份。", @"The game will %@. Your current save moves to Backups first."), what]];
         [self grid:@[[self pill:L(@"取消", @"Cancel") sub:nil style:PILL_PLAIN tap:^{ duo_save_set_pending(nil); [ws changed]; }]] cols:2 tall:56];
@@ -377,7 +411,7 @@ static UIBezierPath *wobble(CGRect r) {   // 手繪感的膠囊：上下兩邊�
     NSMutableArray *ps = [NSMutableArray array];
     for (NSUInteger i = 0; i < MIN(bs.count, (NSUInteger)20); i++) {
         NSDictionary *b = bs[i]; NSString *name = b[@"name"], *kind = b[@"kind"];
-        NSString *k = [kind isEqualToString:@"restore"] ? L(@"還原前留下的", @"Kept before a restore") : [kind isEqualToString:@"fresh"] ? L(@"從頭開始前留下的", @"Kept before starting over") : L(@"自己備份的", @"Your backup");
+        NSString *k = [kind isEqualToString:@"restore"] ? L(@"還原前留下的", @"Kept before a restore") : [kind isEqualToString:@"fresh"] ? L(@"從頭開始前留下的", @"Kept before starting over") : [kind isEqualToString:@"mii"] ? L(@"匯入 Mii 前留下的",@"Kept before Mii import") : L(@"自己備份的", @"Your backup");
         DuoPill *p = [self pill:[self when:b[@"date"]] sub:k style:PILL_PLAIN tap:^{ [ws ask:[@"restore:" stringByAppendingString:name]]; }];
         p.accessibilityHint = L(@"還原這份備份。", @"Restores this backup."); [ps addObject:p];
     }
@@ -390,6 +424,13 @@ static UIBezierPath *wobble(CGRect r) {   // 手繪感的膠囊：上下兩邊�
     [self heading:L(@"關閉遊戲", @"Close Game")];
     [self warn:L(@"想現在套用，就關閉遊戲再開一次。", @"To apply these changes now, close the game and open it again.")];
     [self grid:@[[self pill:L(@"關閉遊戲…", @"Close Game…") sub:nil style:PILL_PLAIN tap:^{ [ws ask:@"quit"]; }]] cols:2 tall:56];
+}
+
+- (void)openMii:(BOOL)exportMode {
+    __weak DuoPanel *ws=self;_mii=[[DuoMiiPanel alloc] initWithExportMode:exportMode];
+    _mii.back=^{DuoPanel *s=ws;if(!s)return;s->_mii=nil;[s relayout];s->_scroll.contentOffset=CGPointZero;};
+    _mii.changed=^(BOOL top){DuoPanel *s=ws;if(!s)return;[s relayout];if(top)s->_scroll.contentOffset=CGPointZero;};
+    _scroll.contentOffset=CGPointZero;[self relayout];
 }
 
 // ---- 存檔動作 | Save actions ----
@@ -455,6 +496,7 @@ static UIBezierPath *wobble(CGRect r) {   // 手繪感的膠囊：上下兩邊�
     }
 #endif
     _resumeKey.frame = CGRectMake(rx, top, rw, rh);
+    _title.text=_mii ? (_mii.exportMode?L(@"匯出 Mii",@"Export a Mii"):L(@"匯入 Mii",@"Import a Mii")) : L(@"設定",@"Settings");
     _title.font = duo_font(28 * u, UIFontWeightHeavy); _title.frame = CGRectMake(x0 + rw, top, W - 2 * rw, 50 * u);
     // 分頁鍵：等寬一排（放不下就兩排） | the page keys: one row of equal widths (two rows when they do not fit)
     NSString *names[DUO_PAGE_N] = {L(@"語言", @"Language"), L(@"畫面", @"Display"), L(@"按鍵", @"Controls"), L(@"存檔", @"Save Data")};
@@ -468,6 +510,7 @@ static UIBezierPath *wobble(CGRect r) {   // 手繪感的膠囊：上下兩邊�
     if (cols == 2) tf = duo_font(19 * u, UIFontWeightBold);
     CGFloat ty = top + rh + 12 * u, th = 52 * u + 2 * d;
     for (DuoPill *t in _tabs) {
+        t.hidden=_mii!=nil;
         BOOL on = t.tag == _page && !_confirm; NSInteger i = t.tag;
         t.style = on ? PILL_PICKED : PILL_PLAIN; t.depth = d; t.title.text = names[i]; t.title.font = tf; t.title.adjustsFontSizeToFitWidth = NO;   // 四個分頁同一個字級 | the four page keys share one text size
         t.accessibilityLabel = names[i]; t.accessibilityTraits = UIAccessibilityTraitButton | (on ? UIAccessibilityTraitSelected : 0);
@@ -475,6 +518,7 @@ static UIBezierPath *wobble(CGRect r) {   // 手繪感的膠囊：上下兩邊�
         t.frame = CGRectMake(x0 + c.origin.x, ty + (i / cols) * (th + gap * 0.7), c.size.width, th);
     }
     CGFloat headH = ty + ((DUO_PAGE_N + cols - 1) / cols) * (th + gap * 0.7) + 10 * u;
+    if(_mii)headH=top+rh+12*u;_rule.hidden=_mii!=nil;
     _head.frame = CGRectMake(0, 0, b.size.width, headH);
     // 分頁鍵下一道橘色虛線，同遊戲島名頁的「或者」 | an orange dashed rule under the page keys, like the "or" line on the game's island-name page
     UIBezierPath *rp = [UIBezierPath bezierPath]; [rp moveToPoint:CGPointMake(x0, headH - 2 * u)]; [rp addLineToPoint:CGPointMake(x0 + W, headH - 2 * u)];

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # 出 Duo 外殼的預覽 App（不帶遊戲）給模擬器：上半放一張靜態圖，其餘是真的外殼。給了模擬器就裝上去。
 # 圖都在建置時取、只放在 GenPreview/（不進版本庫）：Logo 與底部波浪從遊戲檔案取（tools/duo_assets.py，取不到 Logo 就用遊戲圖標），
 # 靜態圖與闔上的聲音從 DUO_LOCAL 目錄拷（picture.png 必須有；picture_type.png = 打字示範用的島名頁；其餘 picture_<名>.png 用 -DuoStill <名> 選；hinge_close.caf/wav/… 可選）。
@@ -26,6 +26,7 @@ G=GenPreview; rm -rf $G && mkdir -p $G/duo || die "mkdir $G"
 ICON=$(dirname "$ROMFS")/icon.jpg
 A=$G/Assets.xcassets; mkdir -p $A
 DUO=$(python3 -I tools/duo_assets.py "$ROMFS" $G/duo "$ICON" --launch $A) || die "duo_assets.py"; t "game pictures: $DUO"
+cp "$DM/third_party/zstd/LICENSE" "$G/duo/Zstandard-LICENSE.txt" || die "copy Zstandard license"
 cp "$STILLS"/picture*.png $G/duo/ || die "copy stills"
 for f in "$STILLS"/hinge_close.*; do [ -f "$f" ] && cp "$f" $G/duo/ && t "closing sound: $f"; done
 A=$G/Assets.xcassets; mkdir -p $A/LaunchYellow.colorset && printf '{"info":{"author":"xcode","version":1}}\n' > $A/Contents.json

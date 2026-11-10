@@ -8,6 +8,7 @@
 // Controller keys reach the host through dm_input_set (dm_input.h) and taps on the picture through dm_touch_set (front.h): the same path the game reads.
 #pragma once
 #import <UIKit/UIKit.h>
+#include "duo_save_store.h"
 
 // 執行期 @available 不能補上舊 SDK 沒有的型別；新 SDK 仍保留鉸鏈與保留區功能。
 // Runtime @available cannot declare types absent from an older SDK; retain hinge and reserved-region features with newer SDKs.
@@ -83,6 +84,23 @@ void duo_capture_pressed(void);
 - (void)begin;                                          // 叫出鍵盤 | bring up the keyboard
 @end
 
+// 共用選項鍵：文字按可見字形置中，頭像不推移文字中心。
+// Shared option key: center visible glyphs; a portrait never shifts the text center.
+enum { PILL_PLAIN, PILL_PICKED, PILL_CONFIRM };
+@interface DuoPill : UIControl
+@property (nonatomic) int style;
+@property (nonatomic) CGFloat depth;
+@property (nonatomic, readonly) UILabel *title, *sub;
+@property (nonatomic, strong) UIImage *portraitImage;
+@end
+@interface DuoMiiPanel : UIView
+@property (nonatomic, copy) void (^back)(void);
+@property (nonatomic, copy) void (^changed)(BOOL scrollToTop);
+@property (nonatomic, readonly) BOOL exportMode;
+- (instancetype)initWithExportMode:(BOOL)mode;
+- (CGFloat)heightForWidth:(CGFloat)width unit:(CGFloat)unit;
+@end
+
 // 設定面板（DuoPanel.m）：HOME 打開（遊戲暫停），蓋在整個畫面上。頁號見下；開機才讀的設定（語言、畫面形狀、幀率、存檔還原 / 從頭開始）下次開啟遊戲時生效
 // The settings panel (DuoPanel.m): opened by HOME (the game pauses), covering the whole screen. Page numbers below; settings read at boot (language, picture shape, frame rate, save restore / start over) take effect the next time the game opens
 enum { DUO_PAGE_LANGUAGE, DUO_PAGE_DISPLAY, DUO_PAGE_CONTROLS, DUO_PAGE_SAVE, DUO_PAGE_N };
@@ -114,10 +132,3 @@ void duo_game_quit(void);                              // 設定裡的「關閉�
 int duo_game_save_snapshot(const char *dst);           // 存檔已提交版的快照到 dst：0 成功，-1 宿主還沒掛存檔，其他 = errno | snapshot of the committed save to dst: 0 done, -1 the host has not mounted the save, else errno
 
 // 存檔備份（DuoSave.m）：只搬、只拷，不刪 | Save backups (DuoSave.m): moves and copies only, never deletes
-NSArray<NSDictionary *> *duo_backups(void);            // 新的在前：name、date（NSDate）、kind（@"" 自己備份的 / @"restore" 還原前留的 / @"fresh" 從頭開始前留的） | newest first: name, date (NSDate), kind (@"" taken by the player / @"restore" kept before a restore / @"fresh" kept before starting over)
-NSString *duo_backup_now(int *err);                    // 成功返回備份名；err：ENOENT = 還沒有存檔 | returns the backup's name; err: ENOENT = no save yet
-NSURL *duo_save_export_copy(int *err);                 // 匯出用的暫存拷貝 | a temporary copy for exporting
-NSString *duo_save_pending(void);                      // 下次開機要做的：nil / @"fresh" / @"restore:<備份名>" | what the next boot does: nil / @"fresh" / @"restore:<backup name>"
-void duo_save_set_pending(NSString *action);
-void duo_save_apply_pending(void);                     // main.m 開機時、宿主掛存檔之前調 | called by main.m at boot, before the host mounts the save
-NSString *duo_save_take_failure(void);                 // 上次開機的待辦沒做成：@"restore" / @"fresh"，取一次就清掉；沒有 = nil | the last boot-time action failed: @"restore" / @"fresh", cleared once taken; none = nil

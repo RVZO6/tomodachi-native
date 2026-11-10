@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # 出一個未簽名的整合 IPA：改寫後的模塊編進可執行文件、iOS 著色器庫、遊戲文件（RomFS）放在 DmIOS.app/romfs。裝機時由簽名工具（AltStore / Sideloadly 等）換成自己的證書與包名。
 # 前提：已按 README 跑過改寫器（patched 目錄）與 iOS 著色器出包（IOSOUT），裝了 Xcode 與 xcodegen。
 # 用法：dm/ios/tools/build_ipa.sh [輸出.ipa]；環境：GAME=遊戲檔案（dm/games/<基礎版標題號>，必給）、W=工作區（缺省 ~/<標題號>-work）、PATCHED / ROMFS / MSL_IOS 可分別指定
@@ -47,6 +47,7 @@ python3 tools/gen_build.py ../host Gen > Gen/dm.xcconfig || die "gen_build"
 F=$(python3 tools/gen_embed.py "$PATCHED" Gen/embed.S $MODS) || die "gen_embed"
 echo "OTHER_LDFLAGS = \$(inherited) \$(DM_FRAMEWORKS) $F" >> Gen/dm.xcconfig
 cp "$PATCHED"/*.fixups.tsv "$PATCHED"/*.gates.tsv "$PATCHED"/*.params.tsv "$PATCHED"/*.cuts.tsv "$PATCHED"/*.obs.tsv Gen/dm/ || die "copy rewriter tables"
+cp "$DM/third_party/zstd/LICENSE" Gen/dm/Zstandard-LICENSE.txt || die "copy Zstandard license"
 cp "$GD/shader_map.tsv" "$GD/pso_manifest.tsv" "$GD/c1_full.tsv" Gen/dm/ || die "copy shader tables"
 # 診斷包：DM_ENV_FILE=文件 → 包內 dm/env.txt（main.m 啓動時按行設環境變量） | Diagnostic build: DM_ENV_FILE=file → dm/env.txt in the bundle (main.m sets one environment variable per line at boot)
 if [ -n "${DM_ENV_FILE:-}" ]; then cp "$DM_ENV_FILE" Gen/dm/env.txt || die "copy DM_ENV_FILE"; t "env: $(grep -v '^#' "$DM_ENV_FILE" | tr '\n' ' ')"; fi

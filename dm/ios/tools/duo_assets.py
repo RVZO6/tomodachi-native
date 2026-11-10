@@ -111,6 +111,12 @@ def main():
             subprocess.run(['sips', '-s', 'format', 'png', icon, '--out', os.path.join(out, 'logo.png')], check=True, capture_output=True)
             made.append('logo (game icon)')
         try:
+            tex = archive(romfs, 'Button_MainMiiIcon_00')['MiiFace^w']
+            astc_png(tex, os.path.join(out, 'mii_placeholder.png'), tmp)
+            made.append('mii_placeholder')
+        except (OSError, ValueError, KeyError, subprocess.CalledProcessError) as e:
+            print(f'duo_assets: no Mii placeholder ({e})', file=sys.stderr)
+        try:
             tex = archive(romfs, 'Common_MenuBGPa_00')
             for key, file in (('LoopWave_00^s', 'wave.png'), ('CmnFacePartsBG_00^r', 'doodle.png')):
                 fmt, w, h, blh, data = tex[key]

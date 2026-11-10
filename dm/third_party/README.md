@@ -6,6 +6,7 @@ This is code written by others, shipped with the repository so there is nothing 
 
 | Directory | What it is | Version and changes | Where it is used | License file |
 |---|---|---|---|---|
+| `zstd/` | Zstandard decoder-only amalgamation | v1.5.7, generated with the upstream single-file script | iOS Mii importer: bounded validation of face-paint frames | `zstd/LICENSE` (BSD) |
 | `bcdec/` | Decompression of BC-compressed textures, a single header `bcdec.h` | 0.985 (upstream commit `80859ed`), unmodified | Graphics layer: decompresses textures on the CPU when the GPU does not support BC formats (`dm/gfx/tex/nvn_bcdec.c`) | `bcdec/LICENSE` (MIT or Unlicense, your choice) |
 | `flip/` | NVIDIA FLIP, an image difference metric that models human viewing. `FLIP.h` plus the source of the command-line tool in `tool/` | Not recorded in the directory | Verification: the image quality measurements in `dm/verify/gfxq/`; build `flip` first with `make -C dm/third_party/flip` | `flip/LICENSE` (BSD 3-Clause) |
 | `libdeflate/` | Decompression library | Upstream commit `92e6a0d`, unmodified | Host: zlib decoding of the game's resource blocks (`dm/host/hle_tact.c`). Only the five decompression-related source files are built; they are listed in `dm/host/Makefile` | `libdeflate/COPYING` (MIT) |

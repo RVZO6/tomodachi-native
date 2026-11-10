@@ -6,17 +6,32 @@
 //   Nothing here ever deletes a save, it only moves and copies: Start Over and Restore first move the whole current save into a backup, and run at the next boot, before the host mounts the save (main.m calls duo_save_apply_pending).
 //   A backup taken while the game runs goes through duo_game_save_snapshot, where the host snapshots the committed version under the commit lock (hle_fs.c dm_save_snapshot), so it never catches a commit halfway; before the host has mounted the save, Documents/save is copied directly.
 //   What waits for the next boot is kept in this app's setting SavePending: @"fresh" or @"restore:<backup name>".
-#import <UIKit/UIKit.h>
+#import <Foundation/Foundation.h>
 #include <stdio.h>
 #include <errno.h>
 #include <sys/clonefile.h>
-#include "duo_shell.h"
+#include "duo_save_store.h"
+#include "duo_mii.h"
 
 // 宿主還沒掛存檔（或預覽 App）時返回 -1，由這裡自己拷；遊戲 App 給強實現（front_ios.m → dm_save_snapshot）
 // Returns -1 when the host has not mounted the save yet (or in the preview app), and the copy is made here; the game app provides the strong version (front_ios.m -> dm_save_snapshot)
 __attribute__((weak)) int duo_game_save_snapshot(const char *dst) { (void)dst; return -1; }
 
-static NSString *doc_dir(void) { return NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES).firstObject; }
+NSString *duo_save_documents(void) {
+#ifdef DM_MII_TEST
+    const char *p = getenv("DM_MII_TEST_DOCUMENTS"); NSCAssert(p && *p, @"An isolated test directory is required"); return @(p);
+#else
+    return NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES).firstObject;
+#endif
+}
+NSUserDefaults *duo_save_preferences(void) {
+#ifdef DM_MII_TEST
+    static NSUserDefaults *u; if (!u) { const char *s=getenv("DM_MII_TEST_SUITE"); NSCAssert(s && *s, @"An isolated test suite is required"); u=[[NSUserDefaults alloc] initWithSuiteName:@(s)]; } return u;
+#else
+    return NSUserDefaults.standardUserDefaults;
+#endif
+}
+static NSString *doc_dir(void) { return duo_save_documents(); }
 static NSString *save_dir(void) { return [doc_dir() stringByAppendingPathComponent:@"save"]; }
 static NSString *backup_dir(void) { return [doc_dir() stringByAppendingPathComponent:@"Backups"]; }
 static NSString *const k_kind_restore = @" (before restore)", *const k_kind_fresh = @" (before starting over)";   // 資料夾名的尾巴，「檔案」App 裡看得到 | folder name suffixes, seen in the Files app
@@ -51,7 +66,7 @@ NSArray<NSDictionary *> *duo_backups(void) {
         if (n.length < 19 || [n hasPrefix:@"."]) continue;
         NSDate *d = [stamp_fmt() dateFromString:[n substringToIndex:19]]; if (!d) continue;   // 只認本 App 起的名字 | only names this app made
         BOOL dir = NO; if (![NSFileManager.defaultManager fileExistsAtPath:[backup_dir() stringByAppendingPathComponent:n] isDirectory:&dir] || !dir) continue;
-        NSString *kind = [n containsString:k_kind_restore] ? @"restore" : [n containsString:k_kind_fresh] ? @"fresh" : @"";
+        NSString *kind = [n containsString:k_kind_restore] ? @"restore" : [n containsString:k_kind_fresh] ? @"fresh" : [n containsString:@"(before Mii import)"] ? @"mii" : @"";
         [out addObject:@{@"name": n, @"date": d, @"kind": kind}];
     }
     [out sortUsingComparator:^NSComparisonResult(NSDictionary *a, NSDictionary *b) { return [b[@"name"] compare:a[@"name"]]; }];   // 名字以時間開頭：新的在前 | names start with the time: newest first
@@ -59,7 +74,7 @@ NSArray<NSDictionary *> *duo_backups(void) {
 }
 
 // 目前的存檔拍一份到 dst（dst 不能已存在）；沒有存檔時返回 ENOENT。先看盤上有沒有檔案：宿主總會建好存檔目錄，空目錄也拍得成 | take a copy of the current save at dst (dst must not exist); ENOENT when there is no save. Check for files first: the host always creates the save directory, and an empty one snapshots fine
-static int snapshot_to(NSString *dst) {
+int duo_save_snapshot_to(NSString *dst) {
     if (!has_files(save_dir())) return ENOENT;
     int r = duo_game_save_snapshot(dst.fileSystemRepresentation);
     return r >= 0 ? r : copy_tree(save_dir(), dst);
@@ -75,9 +90,15 @@ static int staged_copy(NSString *dst, int (^copy)(NSString *tmp)) {
 }
 NSString *duo_backup_now(int *err) {
     NSString *name = fresh_name(@""), *dst = [backup_dir() stringByAppendingPathComponent:name];
-    int r = staged_copy(dst, ^int(NSString *tmp) { return snapshot_to(tmp); }); if (err) *err = r;
+    int r = staged_copy(dst, ^int(NSString *tmp) { return duo_save_snapshot_to(tmp); }); if (err) *err = r;
     fprintf(stderr, "存檔備份：%s %s（%d）\n", r ? "沒做成" : "已備份到", name.UTF8String, r);
     return r ? nil : name;
+}
+// 匯入前的備份仍使用同一個已提交版快照與原子暫存流程。
+// Before-import backups use the same committed snapshot and atomic staging flow.
+NSString *duo_backup_before_mii(int *err) {
+    NSString *name=fresh_name(@" (before Mii import)"), *dst=[backup_dir() stringByAppendingPathComponent:name];
+    int r=staged_copy(dst, ^int(NSString *tmp){ return duo_save_snapshot_to(tmp); }); if(err)*err=r; return r?nil:name;
 }
 NSURL *duo_save_export_copy(int *err) {   // 匯出用的拷貝放在暫存目錄，匯出完由調用方刪（那是這份拷貝，不是存檔） | the copy for exporting sits in the temporary directory; the caller removes it after export (it is that copy, not the save)
     NSString *app = NSBundle.mainBundle.infoDictionary[@"CFBundleDisplayName"] ?: @"Save";
@@ -85,20 +106,23 @@ NSURL *duo_save_export_copy(int *err) {   // 匯出用的拷貝放在暫存目�
     [NSFileManager.defaultManager removeItemAtPath:dir error:nil];
     [NSFileManager.defaultManager createDirectoryAtPath:dir withIntermediateDirectories:YES attributes:nil error:nil];
     NSString *dst = [dir stringByAppendingPathComponent:[NSString stringWithFormat:@"%@ save %@", [app stringByReplacingOccurrencesOfString:@"/" withString:@"-"], [stamp_fmt() stringFromDate:NSDate.date]]];
-    int r = snapshot_to(dst); if (err) *err = r;
+    int r = duo_save_snapshot_to(dst); if (err) *err = r;
     return r ? nil : [NSURL fileURLWithPath:dst];
 }
 
-NSString *duo_save_pending(void) { return [NSUserDefaults.standardUserDefaults stringForKey:@"SavePending"]; }
+NSString *duo_save_pending(void) { return [duo_save_preferences() stringForKey:@"SavePending"]; }
 void duo_save_set_pending(NSString *action) {
-    if (action) [NSUserDefaults.standardUserDefaults setObject:action forKey:@"SavePending"]; else [NSUserDefaults.standardUserDefaults removeObjectForKey:@"SavePending"];
+    NSString *old=duo_save_pending();
+    if (action) [duo_save_preferences() setObject:action forKey:@"SavePending"]; else [duo_save_preferences() removeObjectForKey:@"SavePending"];
+    [duo_save_preferences() synchronize];
+    if (old && ![old isEqual:action]) duo_mii_discard_pending(old);
     fprintf(stderr, "存檔：下次開機%s\n", action ? action.UTF8String : "不做什麼");
 }
 // 開機時的待辦沒做成：記下來，存檔頁打開時告訴玩家一次 | a boot-time action that failed: noted, and told to the player once when the save page opens
-static void note_failed(NSString *what) { [NSUserDefaults.standardUserDefaults setObject:what forKey:@"SaveFailed"]; }
+void duo_save_note_failure(NSString *what) { [duo_save_preferences() setObject:what forKey:@"SaveFailed"]; }
 NSString *duo_save_take_failure(void) {
-    NSString *f = [NSUserDefaults.standardUserDefaults stringForKey:@"SaveFailed"];
-    if (f) [NSUserDefaults.standardUserDefaults removeObjectForKey:@"SaveFailed"];
+    NSString *f = [duo_save_preferences() stringForKey:@"SaveFailed"];
+    if (f) [duo_save_preferences() removeObjectForKey:@"SaveFailed"];
     return f;
 }
 
@@ -112,15 +136,16 @@ NSString *duo_save_take_failure(void) {
 //   The pending action is cleared only once done (or certain to fail); killed halfway, the next boot does it again (at worst one extra backup, never a loss)
 void duo_save_apply_pending(void) {
     NSString *p = duo_save_pending(); if (!p) return;
+    if (duo_mii_apply_pending(p)) return;
     NSFileManager *fm = NSFileManager.defaultManager;
     BOOL restore = [p hasPrefix:@"restore:"];
     NSString *src = restore ? [backup_dir() stringByAppendingPathComponent:[p substringFromIndex:8]] : nil, *stage = [doc_dir() stringByAppendingPathComponent:@"save.restoring"];
     if ((restore && ![fm fileExistsAtPath:src]) || (!restore && ![p isEqualToString:@"fresh"])) {
-        fprintf(stderr, "【紅】存檔：待辦 %s 做不了（備份不在了？），存檔不動\n", p.UTF8String); note_failed(restore ? @"restore" : @"fresh"); duo_save_set_pending(nil); return;
+        fprintf(stderr, "【紅】存檔：待辦 %s 做不了（備份不在了？），存檔不動\n", p.UTF8String); duo_save_note_failure(restore ? @"restore" : @"fresh"); duo_save_set_pending(nil); return;
     }
     if (restore) {
         [fm removeItemAtPath:stage error:nil];   // 上次沒拷完的暫存（備份本身還在 Backups） | a staging copy left from an earlier attempt (the backup itself is still in Backups)
-        if (copy_tree(src, stage)) { [fm removeItemAtPath:stage error:nil]; fprintf(stderr, "【紅】存檔：備份拷不出來，存檔不動\n"); note_failed(@"restore"); duo_save_set_pending(nil); return; }
+        if (copy_tree(src, stage)) { [fm removeItemAtPath:stage error:nil]; fprintf(stderr, "【紅】存檔：備份拷不出來，存檔不動\n"); duo_save_note_failure(@"restore"); duo_save_set_pending(nil); return; }
     }
     NSString *kept = nil;
     if ([fm fileExistsAtPath:save_dir()]) {
@@ -129,7 +154,7 @@ void duo_save_apply_pending(void) {
         kept = [backup_dir() stringByAppendingPathComponent:name];
         if (rename(save_dir().fileSystemRepresentation, kept.fileSystemRepresentation)) {
             fprintf(stderr, "【紅】存檔：搬不動目前的存檔（errno %d），存檔不動\n", errno);
-            [fm removeItemAtPath:stage error:nil]; note_failed(restore ? @"restore" : @"fresh"); duo_save_set_pending(nil); return;
+            [fm removeItemAtPath:stage error:nil]; duo_save_note_failure(restore ? @"restore" : @"fresh"); duo_save_set_pending(nil); return;
         }
         fprintf(stderr, "存檔：目前的存檔搬到 %s\n", name.UTF8String);
     }
@@ -137,7 +162,7 @@ void duo_save_apply_pending(void) {
         int e = errno;
         if (kept && !rename(kept.fileSystemRepresentation, save_dir().fileSystemRepresentation)) fprintf(stderr, "【紅】存檔：還原沒做成（errno %d），原來的存檔已搬回\n", e);
         else fprintf(stderr, "【紅】存檔：還原沒做成（errno %d），原來的存檔在 %s\n", e, kept ? kept.lastPathComponent.UTF8String : "（本來就沒有）");
-        [fm removeItemAtPath:stage error:nil]; note_failed(@"restore"); duo_save_set_pending(nil); return;
+        [fm removeItemAtPath:stage error:nil]; duo_save_note_failure(@"restore"); duo_save_set_pending(nil); return;
     }
     fprintf(stderr, restore ? "存檔：已還原 %s\n" : "存檔：從頭開始%s\n", restore ? src.lastPathComponent.UTF8String : "");
     duo_save_set_pending(nil);

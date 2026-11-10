@@ -15,12 +15,18 @@ targets:
       - Sources/DuoTypeCard.m
       - Sources/DuoPanel.m
       - Sources/DuoSave.m
+      - Sources/DuoMii.m
+      - Sources/DuoMiiPanel.m
+      - Sources/dm_mii_codec.c
+      - Sources/MiiZstd.c
       - Sources/duo_shell.h
       - Preview
       - path: GenPreview/duo    # Logo、波浪、塗鴉、靜態圖、闔上的聲音（都只在本機） | logo, wave, doodles, stills, the closing sound (all local only)
         type: folder
         buildPhase: resources
       - path: GenPreview/Assets.xcassets   # 啓動畫面的黃、App 圖標 | the launch screen's yellow, the app icon
+    dependencies:
+      - sdk: CoreText.framework
     info:
       path: GenPreview/Info.plist
       properties:
@@ -31,6 +37,14 @@ targets:
           UIColorName: LaunchYellow
           UIImageName: LaunchLogo          # 遊戲的標題 Logo（建置時從遊戲檔案取，tools/duo_assets.py --launch），外殼的開場畫面接手時同一張、同一個位置 | the game's title logo (taken from the game files at build time, tools/duo_assets.py --launch); the shell's opening screen takes over with the same picture in the same place
         CFBundleLocalizations: [en, zh-Hant, zh-Hans, ja, ko, de, es, fr, it, nl]   # 系統給的字（貼上鍵、鍵盤）跟著系統語言；同遊戲的語言 | system-provided text (the Paste key, the keyboard) follows the system language; the game's languages
+        UIFileSharingEnabled: true
+        LSSupportsOpeningDocumentsInPlace: true
+        UTImportedTypeDeclarations:
+          - UTTypeIdentifier: org.nxnative.sharemii.ltd
+            UTTypeDescription: Living the Dream Mii
+            UTTypeConformsTo: [public.data]
+            UTTypeTagSpecification:
+              public.filename-extension: [ltd]
         UISupportedInterfaceOrientations:   # 外螢幕也能橫拿 | the outer display can be held sideways too
           - UIInterfaceOrientationPortrait
           - UIInterfaceOrientationLandscapeLeft
