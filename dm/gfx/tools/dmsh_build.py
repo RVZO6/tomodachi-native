@@ -19,7 +19,7 @@ import ast, inspect, os, re, sys, json, struct, hashlib, shutil, subprocess, tem
 DM_ROOT = os.environ.get('DM_ROOT') or os.path.expanduser('~/dm-work')   # 工作區根目錄（遊戲文件、產物、運行現場都在它下面） | Workspace root (game files, build outputs and run artifacts are all under it)
 HOME = os.path.expanduser('~')
 dm_dir, out = sys.argv[1:3]; want = set(sys.argv[3:]); cache_root = out
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__))); import dmsh_chain, dmsh_fetch, dmsh_facts   # 翻譯鏈版本：先核工具與鎖文件，產物進 b-<V>/ | translation chain version: verify the tools against the lock file first; build output goes into b-<V>/
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__))); import dmsh_chain, dmsh_fetch, dmsh_facts, dmsh_ubo_array   # 翻譯鏈版本：先核工具與鎖文件，產物進 b-<V>/ | translation chain version: verify the tools against the lock file first; build output goes into b-<V>/
 _bad = dmsh_chain.check_tools()
 if _bad: sys.exit('\n'.join('【紅】翻譯鏈工具與鎖文件不符：' + b for b in _bad) + '\n（換了工具就 dmsh_chain.py --update-lock 併入倉；只是沒重編翻譯器就重編）')
 CHAIN = dmsh_chain.version(); out = os.path.join(out, 'b-' + CHAIN)
@@ -365,7 +365,12 @@ def reflect(key, stage, msl, res):
     for m in re.finditer(r'^\s*(.+?)\s+(\w+)\s*\[\[id\((\d+)\)\]\];', body.group(1) if body else '', re.M):
         ty, nm, aid = m.group(1).strip(), m.group(2), int(m.group(3))
         e = {'msl_name': nm, 'msl_type': ty, 'arg_id': aid}
-        if nm == 'support_buffer': e.update(kind='support')
+        if ty.startswith('constant spvUboArray_'):
+            ut, us = decode_ubo_tex(nm[:-5] if nm.endswith('Smplr') else nm)
+            sampler = nm.endswith('Smplr')
+            e.update(kind='samp_ubo_table' if sampler else 'tex_ubo_table', reg=(us if sampler else ut)[0], off=(us if sampler else ut)[1])
+            e['element_type'] = re.search(r'struct spvUboArray_' + re.escape(nm) + r'\s*\{\s*uint n;\s*array<(.+), 1>', msl).group(1)
+        elif nm == 'support_buffer': e.update(kind='support')
         elif re.fullmatch(r'[a-z]+_c(\d+)', nm):
             n = int(re.fullmatch(r'[a-z]+_c(\d+)', nm).group(1))
             e.update(kind='cbuf', reg=n - 3) if 3 <= n <= 16 else e.update(kind='c1' if n == 1 else 'drvcb', bank=n)
@@ -427,7 +432,7 @@ def unfillable(dr):
 RULES = []   # 按著色器名掛的 MSL 改寫規則（函數, 適用判定）；原有的暗部重映射 toe 已刪（回到 Switch 原版亮度） | MSL rewrite rules attached by shader name (function, applicability test); the former dark-range remap toe has been removed (back to the original Switch brightness)
 # 第一段代碼指紋不包含 dmsh_fetch.py；可讀 tile 變體單獨按生成 MSL 做第二段緩存。
 # The first-stage code fingerprint does not include dmsh_fetch.py; readable-tile variants get a separate second-stage cache keyed on the generated MSL.
-CODE_FP = hashlib.sha256(source_without_rule_bodies().encode() + b''.join(b'\0' + open(m.__file__, 'rb').read() for m in (dmsh_chain,) + ((ios_metal,) if IOSOUT else ()))).hexdigest()
+CODE_FP = hashlib.sha256(source_without_rule_bodies().encode() + b''.join(b'\0' + open(m.__file__, 'rb').read() for m in (dmsh_chain, dmsh_ubo_array) + ((ios_metal,) if IOSOUT else ()))).hexdigest()
 TOOL_FP = tool_fingerprint().encode()
 
 _CAST = ('as_type<int>(', 'as_type<uint>(')
@@ -505,6 +510,8 @@ def finish(key, w, j, c1):
     if j['stage'] == 'vs' and PAIRS.get(key):   # 像素著色器讀而頂點沒寫的輸出補成 (0,0,0,1)（見 vs_pad） | outputs the pixel shader reads but the vertex shader does not write get (0,0,0,1) (see vs_pad)
         src, pad = vs_pad(key, src)
         if pad: open(msl, 'w').write(src)
+    src = dmsh_ubo_array.rewrite(src)
+    open(msl, 'w').write(src)
     res = json.load(open(os.path.join(w, key + '.res.json')))
     try:
         subprocess.run(MAC_METAL + [msl, '-o', air], check=True)

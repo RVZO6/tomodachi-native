@@ -139,11 +139,13 @@ exec env DM_NVN_SHMAP="$C/Resources/profile/shader_map.tsv" DM_ROOT="$SUP" DM_RO
 '''
 
 
-def build(game, ws, out, name, lang, opmode, sign, embed, keep_data=False):
+def build(game, ws, out, name, lang, opmode, sign, embed, keep_data=False, package=None):
     game = game.upper()
     if not re.fullmatch(r'[0-9A-F]{16}', game): raise BuildError(f'標題號不對 | not a title ID: {game}')
     ws = Path(ws or Path.home() / f'{game}-work').expanduser()
-    pkg = profile(game, 'package'); name = name or profile(game, 'name')
+    pkg = package or profile(game, 'package'); name = name or profile(game, 'name')
+    versions = {line.split('\t')[1] for line in (REPO / f'dm/games/{game}/game.tsv').read_text().splitlines() if line.startswith('build\t')}
+    if pkg not in versions: raise BuildError(f'未登記版本 | unregistered version: {pkg}')
     chain = re.search(r'#define DMSH_CHAIN "([0-9a-f]+)"', (REPO / f'dm/games/{game}/dmsh_chain.h').read_text()).group(1)
     src = {'RomFS': ws / f'data/{pkg}/RomFS', 'icon': ws / f'data/{pkg}/icon.jpg', 'patched': ws / f'build/patched_{pkg}',
            'msl': ws / f'build/cache/metal_shader_cache/b-{chain}', 'font': ws / 'build/font'}
@@ -225,6 +227,7 @@ def main(argv):
     ap.add_argument('-w', '--workspace', default=WORKSPACE, help='工作區 | workspace')
     ap.add_argument('-o', '--out', default=OUT_APP, help='輸出的 .app | output .app')
     ap.add_argument('-n', '--name', default=APP_NAME, help='App 名 | app name')
+    ap.add_argument('-p', '--package', help='遊戲版本（如 v0、v262144）| game version (e.g. v0, v262144)')
     ap.add_argument('--lang', default=LANG, help='遊戲語言（留空 = 跟系統）| game language (empty = follow the system)')
     ap.add_argument('--opmode', type=int, default=OPMODE, choices=(0, 1), help='1 主機 / 0 掌機 | 1 docked / 0 handheld')
     ap.add_argument('--no-sign', dest='sign', action='store_false', default=SIGN, help='不簽名 | do not sign')
@@ -232,7 +235,7 @@ def main(argv):
     ap.add_argument('--keep-data', action='store_true', help='與 --embed 並用：沿用已放好的 RomFS（或把舊 App 裡的搬出來），不再複製 | with --embed: reuse the RomFS already in place (or move it out of an old app) instead of copying it again')
     a = ap.parse_args(argv)
     if not a.game: raise BuildError('沒給遊戲標題號（-h 看用法）| no game title ID given (see -h)')
-    build(a.game, a.workspace, a.out, a.name, a.lang, a.opmode, a.sign, a.embed, a.keep_data)
+    build(a.game, a.workspace, a.out, a.name, a.lang, a.opmode, a.sign, a.embed, a.keep_data, a.package)
 
 
 if __name__ == '__main__':

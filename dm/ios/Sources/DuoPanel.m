@@ -428,10 +428,12 @@ static UIBezierPath *wobble(CGRect r) {   // 手繪感的膠囊：上下兩邊�
     CGFloat W = MIN(b.size.width - 2 * m, 980), x0 = round((b.size.width - W) / 2);
     _u = MIN(MAX(MIN(W / 600, b.size.height / 700), 0.8), 1.2);
     _foldA = _foldB = 0;
+#if DM_DUO_SDK_27_1
     if (@available(iOS 27.1, *)) {   // 直的摺痕（iOS 27.1 的分隔保留區，含未啓用的） | a vertical fold (the iOS 27.1 division reserved region, inactive ones included)
         for (UIViewReservedRegion *r in [self reservedRegionsOfKind:UIViewReservedRegionKind.divisionRegionKind options:UIViewReservedRegionQueryOptionsIncludeInactive])
             if (r.frame.size.height >= b.size.height * 0.9 && r.frame.size.width < b.size.width * 0.2) { _foldA = MAX(r.frame.origin.x, CGRectGetMidX(r.frame) - 20) - x0; _foldB = MIN(CGRectGetMaxX(r.frame), CGRectGetMidX(r.frame) + 20) - x0; }
     }
+#endif
     if (_foldB - _foldA != _laidFold) { _laidFold = _foldB - _foldA; _laidW = 0; }
     CGFloat u = _u, top = MAX(sa.top, 12) + 10 * u;
     // 底部波浪帶 | the bottom wave band
@@ -442,6 +444,7 @@ static UIBezierPath *wobble(CGRect r) {   // 手繪感的膠囊：上下兩邊�
     CGFloat d = 4 * u, rh = 50 * u + 2 * d;
     UIFont *rf = duo_font(20 * u, UIFontWeightHeavy); _resumeKey.title.font = rf; _resumeKey.depth = d;
     CGFloat rw = ceil([_resumeKey.title.text sizeWithAttributes:@{NSFontAttributeName: rf}].width) + 64 * u, rx = x0 + W - rw;
+#if DM_DUO_SDK_27_1
     if (@available(iOS 27.1, *)) {   // 相機（遮擋保留區）擋到右上就把「繼續」放左上；兩邊都擋才整列往下 | when a camera (occlusion reserved region) covers the top right, Resume goes top left; only when both sides are covered does the row move down
         NSArray<UIViewReservedRegion *> *occ = [self reservedRegionsOfKind:UIViewReservedRegionKind.occlusionRegionKind];
         BOOL (^hit)(CGRect) = ^BOOL(CGRect r) { for (UIViewReservedRegion *o in occ) if (CGRectIntersectsRect(o.frame, r)) return YES; return NO; };
@@ -450,6 +453,7 @@ static UIBezierPath *wobble(CGRect r) {   // 手繪感的膠囊：上下兩邊�
             else for (UIViewReservedRegion *o in occ) top = MAX(top, ceil(CGRectGetMaxY(o.frame) + 6));
         }
     }
+#endif
     _resumeKey.frame = CGRectMake(rx, top, rw, rh);
     _title.font = duo_font(28 * u, UIFontWeightHeavy); _title.frame = CGRectMake(x0 + rw, top, W - 2 * rw, 50 * u);
     // 分頁鍵：等寬一排（放不下就兩排） | the page keys: one row of equal widths (two rows when they do not fit)

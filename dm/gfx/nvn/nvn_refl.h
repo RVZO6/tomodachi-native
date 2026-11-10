@@ -12,7 +12,7 @@
 #include <stdint.h>
 
 enum { NVN_RB_CBUF = 1, NVN_RB_SAMP, NVN_RB_TEX, NVN_RB_IMG, NVN_RB_TBUF,
-       NVN_RB_SBUFP, NVN_RB_SUPPORT, NVN_RB_C1, NVN_RB_DRV0, NVN_RB_DRV2, NVN_RB_SAMPT, NVN_RB_UBOP, NVN_RB_TEXU, NVN_RB_SAMPU };
+       NVN_RB_SBUFP, NVN_RB_SUPPORT, NVN_RB_C1, NVN_RB_DRV0, NVN_RB_DRV2, NVN_RB_SAMPT, NVN_RB_UBOP, NVN_RB_TEXU, NVN_RB_SAMPU, NVN_RB_TEXUT, NVN_RB_SAMPUT };
 // TEXU / SAMPU：無綁定貼圖 / 採樣器——句柄由遊戲寫在 uniform 槽 reg 的字節偏移 off 處（32 位：低 20 位貼圖號、高 12 位採樣器號），回放時現讀
 // TEXU / SAMPU: bindless texture / sampler - the game writes the handle at byte offset off of uniform slot reg (32 bits: low 20 bits texture ID, high 12 bits sampler ID); read at replay time   // UBOP：計算階段 uniform 槽 r 的設備指針（Maxwell 計算階段經 c0 地址表 + 全局內存讀 uniform）   // SAMPT：採樣器取自貼圖槽 r 的合併句柄（高位 = 採樣器號）   // 綁定種類（json 的 type）；IMG = 可寫貼圖（D3D u_r，NVN 圖像槽 r）；TBUF = 類型化緩衝（D3D t_r Buffer<T>，NVN 貼圖槽 r 的緩衝貼圖） | UBOP: device pointer of compute-stage uniform slot r (the Maxwell compute stage reads uniforms via the c0 address table + global memory)   // SAMPT: the sampler is taken from the combined handle of texture slot r (high bits = sampler ID)   // Binding kind (type in the json); IMG = writable texture (D3D u_r, NVN image slot r); TBUF = typed buffer (D3D t_r Buffer<T>, buffer texture in NVN texture slot r)
 enum { NVN_DPF_FLOAT = 0, NVN_DPF_UINT, NVN_DPF_SINT, NVN_DPF_DEPTH };            // 啞貼圖像素類（由 msl_type 定） | Dummy texture pixel class (determined by msl_type)

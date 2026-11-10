@@ -83,12 +83,14 @@ static CGFloat bar_u(CGFloat w) { return MIN(MAX(w / 626.0, 0.85), 1.3); }   // 
     // 不用左右安全區：外螢幕直拿時右邊整條都算安全區，照算會把列擠窄
     // The contents keep clear of a camera over the bar (the iOS 27.1 occlusion reserved region; on the outer display held sideways with the bar at the very bottom, the camera is bottom right); the background still spans the full width.
     // Not the side safe areas: on the outer display held upright the whole right strip counts as safe area, which would squeeze the bar
+#if DM_DUO_SDK_27_1
     if (@available(iOS 27.1, *)) {
         for (UIViewReservedRegion *r in [self reservedRegionsOfKind:UIViewReservedRegionKind.occlusionRegionKind]) {
             CGRect f = CGRectIntersection(r.frame, self.bounds); if (CGRectIsEmpty(f)) continue;
             if (CGRectGetMidX(f) > w / 2) R = MAX(R, w - CGRectGetMinX(f) + 8 * u); else L = MAX(L, CGRectGetMaxX(f) + 8 * u);
         }
     }
+#endif
     UIColor *navy = duo_rgb(DUO_NAVY);
     _bg.frame = self.bounds;
     CGFloat r = 26 * u; UIBezierPath *bp = [UIBezierPath bezierPathWithRoundedRect:CGRectMake(0, 0, w, self.bounds.size.height + r) byRoundingCorners:UIRectCornerTopLeft | UIRectCornerTopRight cornerRadii:CGSizeMake(r, r)];

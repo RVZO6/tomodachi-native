@@ -121,10 +121,12 @@ static double g_picture_aspect = 1920.0 / 1350.0;   // 主線程寫、各線程�
     [self loadClick];
     _wantPage = duo_shell_page_named([NSUserDefaults.standardUserDefaults stringForKey:@"DuoPanel"] ?: @"");   // 啓動參數 -DuoPanel save 等：開場後直接打開那頁 | the launch argument -DuoPanel save etc.: open that page after the opening
     [self applyPadPrefs];
+#if DM_DUO_SDK_27_1
     if (@available(iOS 27.1, *)) {
         __weak DuoShellVC *ws = self;
         [self.view addInteraction:[[UIHingeInteraction alloc] initWithUpdateHandler:^(UIHingeInteraction *i, UIHingeInteractionUpdate *u) { (void)i; [ws hingeChanged:u.hinge]; }]];
     }
+#endif
     NSNotificationCenter *nc = NSNotificationCenter.defaultCenter;
     [nc addObserver:self selector:@selector(keyboard:) name:UIKeyboardWillChangeFrameNotification object:nil];
     [nc addObserver:self selector:@selector(keyboard:) name:UIKeyboardWillHideNotification object:nil];
@@ -170,6 +172,7 @@ static double g_picture_aspect = 1920.0 / 1350.0;   // 主線程寫、各線程�
 // Upright (taller than wide): picture on top, the fold, the controller below. Sideways: the picture fills the screen with the keys floating over it (as on any iPhone held sideways), the middle keys kept off the vertical fold
 - (CGRect)foldIn:(CGRect)b {   // 橫跨整寬或整高的摺痕；沒有 = CGRectNull | a fold spanning the full width or height; none = CGRectNull
     CGRect fold = CGRectNull; NSString *log = @"沒有摺痕"; _foldActive = NO;
+#if DM_DUO_SDK_27_1
     if (@available(iOS 27.1, *)) {
         NSArray<UIViewReservedRegion *> *rs = [self.view reservedRegionsOfKind:UIViewReservedRegionKind.divisionRegionKind options:UIViewReservedRegionQueryOptionsIncludeInactive];
         NSMutableString *m = [NSMutableString string];
@@ -181,6 +184,7 @@ static double g_picture_aspect = 1920.0 / 1350.0;   // 主線程寫、各線程�
         for (UIViewReservedRegion *r in [self.view reservedRegionsOfKind:UIViewReservedRegionKind.occlusionRegionKind])   // 相機等遮擋區，只記日誌 | occlusions such as cameras, logged only
             log = [log stringByAppendingFormat:@" 遮擋 %@", NSStringFromCGRect(r.frame)];
     }
+#endif
     if (![log isEqualToString:_foldLog]) { _foldLog = log; fprintf(stderr, "duo: 畫面 %.0f×%.0f，摺痕 %s\n", b.size.width, b.size.height, log.UTF8String); }
     if (CGRectIsNull(fold)) return fold;
     // 攤平時系統可能報零寬 / 零高：沿用半折時見過的大小，兩種姿勢一套版面 | flat, the system may report zero width / height: keep the size seen half-folded, one layout for both
@@ -403,6 +407,7 @@ UIImage *duo_band_image(CGSize size, CGFloat s) {   // 介面在 duo_shell.h；�
         fprintf(stderr, "【紅】duo: 闔上的聲音讀不了 %s\n", p.UTF8String); _click = 0;
     }
 }
+#if DM_DUO_SDK_27_1
 - (void)hingeChanged:(UIHinge *)h API_AVAILABLE(ios(27.1)) {
     NSInteger s = h ? h.status : UIHingeStatusUnknown;
     if (s == _hinge) return;
@@ -411,6 +416,7 @@ UIImage *duo_band_image(CGSize size, CGFloat s) {   // 介面在 duo_shell.h；�
     _hinge = s;
     [self.view setNeedsLayout];   // 摺痕可能跟著變 | the fold may change with it
 }
+#endif
 - (double)pictureAspect { return g_picture_aspect; }
 @end
 

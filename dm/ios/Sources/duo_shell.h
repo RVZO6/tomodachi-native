@@ -9,6 +9,14 @@
 #pragma once
 #import <UIKit/UIKit.h>
 
+// 執行期 @available 不能補上舊 SDK 沒有的型別；新 SDK 仍保留鉸鏈與保留區功能。
+// Runtime @available cannot declare types absent from an older SDK; retain hinge and reserved-region features with newer SDKs.
+#if defined(__IPHONE_27_1) && __IPHONE_OS_VERSION_MAX_ALLOWED >= __IPHONE_27_1
+#define DM_DUO_SDK_27_1 1
+#else
+#define DM_DUO_SDK_27_1 0
+#endif
+
 // 遊戲配色（島名頁取色） | the game's palette (sampled from the island-name page)
 enum {
     DUO_YELLOW = 0xFFC100, DUO_ORANGE = 0xFF8000, DUO_NAVY = 0x002240,

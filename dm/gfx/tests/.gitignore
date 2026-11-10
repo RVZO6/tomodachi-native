@@ -43,3 +43,7 @@ t_ub
 t_ub.dSYM/
 t_dirty_race
 t_dirty_race.dSYM/
+t_depth_feedback
+t_depth_feedback.dSYM/
+t_ubo_table
+t_ubo_table.dSYM/

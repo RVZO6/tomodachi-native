@@ -2106,15 +2106,17 @@ static void bv_flush(void) {
 // 通道結束時建給綁定的視圖不能馬上放掉：Metal 4 的命令緩衝不持有資源，GPU 還沒跑到這個通道，視圖就沒了，讀到的是空的或別張貼圖（彈窗背景全黑、Mii 畫面發白帶殘影）。交給 defer_obj_unref 等提交完成
 // The copy pool is reused by (format, size, levels): a frame copies a dozen or more sizes (Mii face textures, the bloom chain, the popup blur), and a pool that is too small creates and drops copies every frame
 // The views built for the bindings cannot be dropped as soon as the pass ends: Metal 4 command buffers do not retain resources, so the view would be gone before the GPU reaches the pass and the read returns nothing or another texture (a black popup background, a washed-out Mii screen with ghosts). defer_obj_unref holds them until the submission completes
-enum { FBX_MAX = 4, FBX_POOL = 32 };
+enum { FBX_MAX = 9, FBX_POOL = 32 };
 static __strong id<MTLTexture> g_fbx_pool[FBX_POOL]; static uint64_t g_fbx_use[FBX_POOL], g_fbx_tick;
 static __strong id<MTLTexture> g_fbx_copy[FBX_MAX]; static uint64_t g_fbx_ser[FBX_MAX]; static int g_fbx_n;
 static NSMutableDictionary<NSNumber *, id<MTLTexture>> *g_fbx_views; static uint64_t g_fbx_count;   // g_fbx_count：累計拷了幾次 | g_fbx_count: copies made so far
 // 副本只代表拷的那一刻：之後本通道再畫一次，附件就變了。遊戲在同一通道裡一層層疊（每畫一層讀前一層的結果，Switch 靠兩次繪製之間的紋理屏障；Mii 臉部貼圖、彈窗模糊鏈都這樣），
-// 再讀附件的繪製得結束通道、重拷一份。g_fbx_drawn：拷完之後本通道畫過了
+// 再讀已寫過附件的繪製得結束通道、重拷一份；唯讀深度繪製可沿用副本。
 // A copy only holds the moment it was made: once this pass draws again, the attachment has changed. Games stack layers in one pass (each layer reads the previous layer's result, legal on the Switch through a texture barrier between the draws; the Mii face textures and the popup blur chain do this),
-// so a later draw that reads the attachment must end the pass and copy again. g_fbx_drawn: this pass has drawn since the copy
-static int g_fbx_drawn;
+// so a later draw that reads a written attachment must end the pass and copy again; read-only depth draws may reuse the copy.
+// 顏色位 0..7、深度位 8；唯讀深度繪製可重用同通道副本，寫入後才失效。
+// Colour bits 0..7, depth bit 8; read-only depth draws reuse a same-pass copy until a write invalidates it.
+static unsigned g_fbx_mask, g_fbx_dirty;
 static void rp_end(void) { if (g_enc) { AP_B;
     ghost_flush();
     if (enc_label_on()) { static uint64_t lf = ~0ull, base; uint64_t f = atomic_load(&g_cur_frame); if (f != lf) { lf = f; base = g_stat_pass - 1; }   // 幀內序號：同一趟每幀同名，表裡才能按名歸並 | Intra-frame serial: the same pass has the same name every frame, so the table can aggregate by name
@@ -2122,7 +2124,7 @@ static void rp_end(void) { if (g_enc) { AP_B;
 #ifdef NVN_RT_RANGE_TEST
     int ranged=g_rt_range_active && !g_rt_range_pending;
 #endif
-    sd_finish(); enc_r_end(g_enc); zskip_commit_clears(); g_enc = nil; g_rt_merged = 0; if (g_fbx_n) { g_fbx_n = 0; for (id v in g_fbx_views.allValues) defer_obj_unref(v); [g_fbx_views removeAllObjects]; } g_rt_range_active = g_rt_range_pending = 0; pg_end_render(); ts_after(); if (g_lp.count) lp_finish(); fz_end();
+    sd_finish(); enc_r_end(g_enc); zskip_commit_clears(); g_enc = nil; g_rt_merged = 0; if (g_fbx_n) { g_fbx_n = 0; g_fbx_mask = g_fbx_dirty = 0; for (id v in g_fbx_views.allValues) defer_obj_unref(v); [g_fbx_views removeAllObjects]; } g_rt_range_active = g_rt_range_pending = 0; pg_end_render(); ts_after(); if (g_lp.count) lp_finish(); fz_end();
 #ifdef NVN_RT_RANGE_TEST
     rr_finish(ranged);
 #endif
@@ -3451,6 +3453,40 @@ static uint32_t ubo_handle(int stage, int reg, int off) {
     if (!mtl_addr(u->addr + off, 4, &mb, &mo) || !(base = [(__bridge id<MTLBuffer>)mb contents])) return 0;
     uint32_t h; memcpy(&h, base + mo, 4); return h;
 }
+// uniform 貼圖表：長度來自實際綁定緩衝，末項是越界啞資源；頭部 uint n 後按 8 字節對齊資源 ID。
+// Uniform texture tables: length from the bound buffer, with a dummy sentinel; align resource IDs to 8 bytes after uint n.
+static unsigned ubo_table_count(int stage, const nvn_rbind *b) {
+    if (stage < 0 || stage >= 6 || b->reg >= 16) return 0;
+    const p_bind_buf *u = &S.ubo[stage][b->reg];
+    if (!u->addr || u->size <= b->off) return 0;
+    uint64_t n = (u->size - b->off) / 8;
+    return (unsigned)MIN(n, 8192u);   // NVN uniform 緩衝上限 64 KiB | NVN uniform buffer limit: 64 KiB
+}
+static uint64_t ubo_table_gpu(int stage, const nvn_rbind *b) {
+    unsigned n = ubo_table_count(stage, b); int sampler = b->kind == NVN_RB_SAMPUT;
+    id<MTLBuffer> buffer; size_t offset = arena_alloc(8 + ((size_t)n + 1) * 8, &buffer);
+    uint64_t *data = (uint64_t *)((uint8_t *)buffer.contents + offset); data[0] = n;
+    uint64_t dummy = sampler ? dummy_samp_rid() : dummy_tex(b->dtt, b->dpf).gpuResourceID._impl;
+    for (unsigned i = 0; i <= n; i++) {
+        uint32_t h = i < n ? ubo_handle(stage, b->reg, b->off + 8 * i) : 0;
+        uint64_t rid = dummy;
+        if (sampler) {
+            unsigned sid = h >> 20;
+            if (sid && sid < (unsigned)g_nsreg && g_sreg_ok[sid]) { samp_fast((int)sid); if (g_srid[sid]) rid = g_srid[sid]; }
+        } else {
+            unsigned tid = h & 0xfffff;
+            if (tid && tid < (unsigned)g_ntreg && g_treg[tid].ok) {
+                void *view = NULL; uint64_t r = tex_fast_rid((int)tid, &view);
+                __unsafe_unretained id<MTLTexture> t = (__bridge id<MTLTexture>)view;
+                if (t && t.textureType != (MTLTextureType)b->dtt) { uint64_t fixed = tex_type_fix((int)tid, &t, (MTLTextureType)b->dtt); if (fixed) r = fixed; }
+                if (t && g_fbx_n) { id<MTLTexture> copy = fbx_bind((int)tid, t); if (copy) { t = copy; r = copy.gpuResourceID._impl; } }
+                if (t) rid = r;
+            }
+        }
+        data[1 + i] = rid;
+    }
+    return buffer.gpuAddress + offset;
+}
 static int encode_args_(id<MTLCommandEncoder> en, NvShader *sh, int nvn_stage, int metal_vertex);
 static int encode_args(id<MTLCommandEncoder> en, NvShader *sh, int nvn_stage, int metal_vertex) { AP_B; int r = encode_args_(en, sh, nvn_stage, metal_vertex); AP_E(3); return r; }
 static int encode_args_(id<MTLCommandEncoder> en, NvShader *sh, int nvn_stage, int metal_vertex) {
@@ -3472,7 +3508,9 @@ static int encode_args_(id<MTLCommandEncoder> en, NvShader *sh, int nvn_stage, i
     for (int i = 0; i < sh->rf.nb; i++) {
         const nvn_rbind *b = &sh->rf.b[i];
         int reg = b->reg, aid = b->aid;
-        if (b->kind == NVN_RB_CBUF) {
+        if (b->kind == NVN_RB_TEXUT || b->kind == NVN_RB_SAMPUT) {
+            slots[aid] = ubo_table_gpu(nvn_stage, b);
+        } else if (b->kind == NVN_RB_CBUF) {
             const p_bind_buf *u = reg < 16 ? &S.ubo[nvn_stage][reg] : NULL;
             void *mb; uint64_t mo, gpu;
             if (!u || !u->addr || !mtl_gpu_addr(u->addr, 1, &mb, &mo, &gpu)) { RED_ONCE(16, "階段 %d cb%d 沒有綁定 uniform 緩衝", nvn_stage, reg); continue; }
@@ -5197,31 +5235,48 @@ static void ghost_flush(void) {   // 渲染通道結束前：把認到的圖標�
 }
 // 這次繪製取樣了哪些顏色附件（位 k = 附件 k）：比貼圖序號，且取樣的級範圍要含附件那一級（寫第 k 級、讀第 k−1 級的降採樣鏈不算）
 // Which colour attachments this draw samples (bit k = attachment k): compare texture serials, and the sampled level range must include the attachment's level (downsample chains writing level k and reading level k-1 do not count)
+// 深度回授與 uniform 句柄數組：參考 MacNativeGames 的 Mii 光照修復，沿用本宿主的副本池及視圖。
+// Depth feedback and uniform handle arrays: adapt the MacNativeGames Mii-lighting fix to this host's copy pool and views.
 static unsigned fbx_hazard(NvProg *pr) {
     unsigned mask = 0; if (!pr) return 0;
-    for (int st = 0; st < 5; st++) { __unsafe_unretained NvShader *sh = pr->sh[st]; if (!sh) continue;
+    for (int st = 0; st < 5; st++) { __unsafe_unretained NvShader *sh = pr->sh[st]; if (!sh || sh->stage >= 6) continue;
         for (int i = 0; i < sh->rf.nb; i++) { const nvn_rbind *b = &sh->rf.b[i];
-            if (b->kind != NVN_RB_TEX || b->reg >= 128 || sh->stage >= 6) continue;
-            int tid = (int)(S.tex[sh->stage][b->reg] & 0xfffff); if (!tid) continue;
-            pthread_mutex_lock(&g_rmu);
-            uint64_t ser = tid < g_ntreg && g_treg[tid].ok ? g_treg[tid].t.serial : 0; view_t v = tid < g_ntreg && g_treg[tid].has_v ? g_treg[tid].v : (view_t){0};
-            pthread_mutex_unlock(&g_rmu);
-            for (int k = 0; ser && k < R.rt.n && k < 8; k++) {
-                if (!R.rt.color[k] || R.rt.color[k]->serial != ser) continue;
-                unsigned alv = R.rt.has_cview[k] && R.rt.cview[k].set_levels ? R.rt.cview[k].base_level : 0;
-                if (v.set_levels && (alv < v.base_level || alv >= (unsigned)v.base_level + (v.nlevels ? v.nlevels : 1))) continue;
-                mask |= 1u << k;
-            } } }
+            if (b->kind != NVN_RB_TEX && b->kind != NVN_RB_TEXU && b->kind != NVN_RB_TEXUT) continue;
+            unsigned count = b->kind == NVN_RB_TEXUT ? ubo_table_count(sh->stage, b) : b->kind == NVN_RB_TEXU ? b->cnt : 1;
+            for (unsigned e = 0; e < count; e++) {
+                int tid = (int)(((b->kind == NVN_RB_TEXU || b->kind == NVN_RB_TEXUT) ? ubo_handle(sh->stage, b->reg, b->off + 8 * e) :
+                               b->reg < 128 ? S.tex[sh->stage][b->reg] : 0) & 0xfffff);
+                if (!tid) continue;
+                pthread_mutex_lock(&g_rmu);
+                uint64_t ser = tid < g_ntreg && g_treg[tid].ok ? g_treg[tid].t.serial : 0;
+                view_t v = tid < g_ntreg && g_treg[tid].has_v ? g_treg[tid].v : (view_t){0};
+                pthread_mutex_unlock(&g_rmu);
+                for (int k = 0; ser && k < 9; k++) {
+                    const tex_t *t = k == 8 ? R.rt.depth : k < R.rt.n ? R.rt.color[k] : NULL;
+                    if (!t || t->serial != ser) continue;
+                    unsigned alv = k == 8 ? (R.rt.has_dview && R.rt.dview.set_levels ? R.rt.dview.base_level : 0) :
+                                           (R.rt.has_cview[k] && R.rt.cview[k].set_levels ? R.rt.cview[k].base_level : 0);
+                    if (v.set_levels && (alv < v.base_level || alv >= (unsigned)v.base_level + (v.nlevels ? v.nlevels : 1))) continue;
+                    mask |= 1u << k;
+                }
+            }
+        }
+    }
     return mask;
 }
+static unsigned fbx_needs_refresh(NvProg *pr) { return fbx_hazard(pr) & (~g_fbx_mask | g_fbx_dirty); }
 static int fbx_on(void) { static int on = -1; if (on < 0) { const char *e = getenv("DM_NVN_FBX"); on = !(e && !strcmp(e, "0")); if (!on) MLOG("DM_NVN_FBX=0：附件回授不拷副本（對照用）"); } return on; }   // DM_NVN_FBX=0 關（A/B 對照） | DM_NVN_FBX=0 turns it off (A/B comparison)
 static void fbx_prepare(NvProg *pr) {
-    g_fbx_drawn = 0;
     if (!fbx_on()) return;
     unsigned mask = fbx_hazard(pr);
-    for (int k = 0; mask && k < R.rt.n && k < 8 && g_fbx_n < FBX_MAX; k++) {
+    // 首次繪製前掛起的清除須先落地，否則副本讀到清除前的深度（或顏色）。
+    // Land pending clears before the first sampling draw, or the copy would contain pre-clear depth (or colour).
+    if (mask) rp_flush();
+    g_fbx_mask = g_fbx_dirty = 0;
+    for (int k = 0; mask && k < 9 && g_fbx_n < FBX_MAX; k++) {
         if (!(mask >> k & 1)) continue;
-        id<MTLTexture> a = tex_mtl(R.rt.color[k]);
+        const tex_t *target = k == 8 ? R.rt.depth : R.rt.color[k];
+        id<MTLTexture> a = tex_mtl(target);
         if (!a || a.textureType != MTLTextureType2D || a.sampleCount != 1 || bc_block_bytes(a.pixelFormat)) continue;
         int hit = -1, lru = 0;
         for (int i = 0; i < FBX_POOL; i++) {
@@ -5242,7 +5297,7 @@ static void fbx_prepare(NvProg *pr) {
         id e = blit();
         for (NSUInteger lv = 0; lv < a.mipmapLevelCount; lv++)
             enc_b_copy_texture(e, a, 0, lv, MTLOriginMake(0, 0, 0), MTLSizeMake(MAX(a.width >> lv, 1u), MAX(a.height >> lv, 1u), 1), g_fbx_pool[hit], 0, lv, MTLOriginMake(0, 0, 0));
-        g_fbx_copy[g_fbx_n] = g_fbx_pool[hit]; g_fbx_ser[g_fbx_n] = R.rt.color[k]->serial; g_fbx_n++;
+        g_fbx_copy[g_fbx_n] = g_fbx_pool[hit]; g_fbx_ser[g_fbx_n] = target->serial; g_fbx_n++; g_fbx_mask |= 1u << k;
         g_fbx_count++;
     }
 }
@@ -5400,12 +5455,14 @@ frz_plain:;
     int skip_d = mode != 0;
     // 通道中途要讀自己的附件（還沒拷過，或拷完之後又畫過）：先結束通道，下面重開時重拷
     // A draw mid-pass reads its own attachment (not copied yet, or drawn to since the copy): end the pass first, the copy is made again when it reopens below
-    if (g_enc && (!g_fbx_n || g_fbx_drawn) && fbx_on() && fbx_hazard(pr)) rp_end();
+    if (g_enc && fbx_on() && fbx_needs_refresh(pr)) rp_end();
     if (!g_enc) { g_fd_dw = dw; g_fd_di = di; fbx_prepare(pr); }
     id<MTLRenderCommandEncoder> en = rp_begin_ex(mode);
     g_fd_dw = NULL; g_fd_di = NULL;
     if (!en) { PD("Z %llu 繪製跳過：沒開成渲染通道", g_stat_pass); return; }   // Z 行：繪製在這些早退處被丟的原因 | Z lines: why a draw was dropped at these early returns
-    if (g_fbx_n) g_fbx_drawn = 1;   // 這次繪製之後副本就舊了 | the copy is stale after this draw
+    // 顏色保守標髒；深度只在本次繪製可寫時標髒，保留唯讀通道的重用。
+    // Mark colours dirty conservatively; mark depth only for a writing draw, preserving reuse in read-only passes.
+    if (g_fbx_n) g_fbx_dirty |= ((1u << R.rt.n) - 1u) | (S.ds.dw ? 1u << 8 : 0);
     if (defer_q_draw) defer_replay();
     if (skip_d) { g_stat_ds_omit++; if (mode == 3) g_stat_s_only++; else if (mode == 4) g_stat_d_only++; }
     // 管線只依賴（程序, 通道目標, 混合 / 顏色 / 寫掩碼 / 多重採樣狀態, 頂點佈局）：這些沒變就沿用上次的

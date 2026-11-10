@@ -3,6 +3,6 @@ dmsh_xlate.dll	fee44069aa922b9f
 Ryujinx.Graphics.Shader.dll	a66a7f32a360f0ff
 Ryujinx.Common.dll	2b2eb1312e5b0770
 xlate_source	c72646335cc9cf64
-spirv-cross	d9dc197f061b42a5
-metal_macosx	Apple metal version 32023.921 (metalfe-32023.921.6)
-metal_iphoneos	Apple metal version 32023.921 (metalfe-32023.921.6)
+spirv-cross	72fd02ea18d33400
+metal_macosx	Apple metal version 32023.918 (metalfe-32023.918.1)
+metal_iphoneos	Apple metal version 32023.918 (metalfe-32023.918.1)

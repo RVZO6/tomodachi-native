@@ -177,6 +177,12 @@ CUTS = {
     (0x3f774c, '69824379', '29008052', 'UI 手柄選指針模式：觸屏允許位 ldrh w9,[x19,#0x1c0] → mov w9,#1（每頁都看 0 號手指按下，按下就切觸屏指針）', '僅宿主'),
     (0x3f77c0, '69824379', '29008052', 'UI 手柄選指針模式：觸屏允許位 ldrh w9,[x19,#0x1c0] → mov w9,#1（觸屏指針模式不被拉回焦點模式）', '僅宿主'),
   ],
+  # 1.0.4：逐條核對 main+0x4013a0 的指針模式分支；欄位與兩次允許位讀取不變。
+  # 1.0.4: checked the pointer-mode branches in main+0x4013a0; the fields and both touch-allowed reads are unchanged.
+  'b39fef373fb12154385d012aab3bc99e': [
+    (0x4014ec, '69824379', '29008052', 'UI 觸屏允許位：每頁都看 0 號手指按下 | UI touch allowed on every page', '僅宿主'),
+    (0x401560, '69824379', '29008052', 'UI 觸屏指針不被拉回焦點模式 | keep the UI touch pointer active', '僅宿主'),
+  ],
 }
 # ---- 可選剪口：{NSO 構建號: {選項名: [(偏移, 原字節, 新字節, 理由)]}} ----
 # 出包時照樣逐條斷言原字節，但不寫進映像，只列進 <名>.options.tsv；Mac 宿主裝載時按 DM_OPTIONS（逗號分隔的選項名）在封頁之前套上，套前再核一次原字節（loader.c）。
@@ -193,6 +199,11 @@ OPTIONS = {
   # checked by disassembly in the host; measured: with the same input aligned by time, frame 2N at 60 FPS matches frame N at 30 FPS (only making the host present every tick runs the game at double speed)
   '56bf85bd535413464cb75bb6c2683b67': {
     'fps60': [(0x28b35c, '092440b9', '34008052', '幀率控制：出圖間隔 ldr w9,[x0,#0x24] → mov w20,#1（60 FPS，步長減半）')],
+  },
+  # 1.0.4 的 0x27f474：+0xa4 後仍是 str w20,+0x40；sdiv 60/w20；str +0x50，非單改宿主出圖速度。
+  # 1.0.4 at 0x27f474: +0xa4 still precedes str w20,+0x40; sdiv 60/w20; str +0x50, not just faster host presentation.
+  'b39fef373fb12154385d012aab3bc99e': {
+    'fps60': [(0x27f518, '092440b9', '34008052', '出圖間隔 1，60 FPS，步長減半 | present interval 1, 60 FPS, half frame step')],
   },
 }
 # ---- 已登記觀測門：{NSO 構建號: [(偏移, 編號, 原指令字, 理由)]}。編號與宿主 hle.h 的 OBS_* 一致；
@@ -987,6 +998,15 @@ PARAMS = {'db0507f36b84200ac05f75d76ed5026f': [
     (0x46ed70, '52a890e8', None, None, 8, 'KRESF.hi', '每幀出圖裁切 0x46e8dc 主機分支：裁切高 1080.0（mov w8, #1080.0）'),
   ],
 }
+# 1.0.4：以函數對照定位並反匯編核過常量、暫存器與中間指令；掌機虛擬畫布仍保持 1280x720。
+# 1.0.4: function-matched and disassembled constants, registers and intervening instructions; keep the handheld virtual canvas at 1280x720.
+PARAMS['b39fef373fb12154385d012aab3bc99e'] = [
+    (0x8b736c, 'd280f009', 0x8b7374, 'f2c08709', 9, 'KRES1', '主機渲染尺寸 | docked render size'),
+    (0x8df6b0, 'd280f008', 0x8df6b4, 'f2c08708', 8, 'KRES1', '交換鏈尺寸 | swapchain size'),
+    (0x481bb8, '52a89e09', None, None, 9, 'KRESF', '出圖裁切寬 | present crop width'),
+    (0x481ba4, '52a890e8', None, None, 8, 'KRESF.hi', '裁切高與比例除數 | crop height and scale divisor'),
+    (0x481fec, '52a890e8', None, None, 8, 'KRESF.hi', '主機裁切高 | docked crop height'),
+]
 params = PARAMS.get(BUILD_ID, [])
 for oa, wa, ob_, wb, r, key, why in params:
     for o, w0 in ((oa, wa), (ob_, wb)) if ob_ is not None else ((oa, wa),):
@@ -1019,7 +1039,10 @@ for oa, wa, ob_, wb, r, key, why in params:
 # With a 16:9 output, width / height = 16:9 and the result equals the original instruction.
 # Hor+: when the output is taller than 16:9 (width / height < 16/9) and the caller is the main camera (return address = item 3; the main camera rebuilds its projection here every frame), fovy (s2, copied away only at 0x8ce868) is multiplied by (16/9) ÷ ratio:
 # the horizontal view stays as at 16:9 with more visible above and below; without it the vertical view stays and the sides shrink. fovy·k approximates 2·atan(k·tan(fovy/2)) (main camera fovy 16°, error < 1%, affects only how much is seen, not proportions) ----
-ASPECT = {'56bf85bd535413464cb75bb6c2683b67': (0x8ce854, 0x1e204068, 0x205c88)}
+ASPECT = {
+    '56bf85bd535413464cb75bb6c2683b67': (0x8ce854, 0x1e204068, 0x205c88),
+    'b39fef373fb12154385d012aab3bc99e': (0x897d64, 0x1e204068, 0x3a9ec),
+}
 if BUILD_ID in ASPECT:
     off, word, main_cam_ret = ASPECT[BUILD_ID]
     assert struct.unpack_from('<I', IMG, off)[0] == word, f'投影寬高比原指令不符 {off:#x}'
@@ -1067,11 +1090,20 @@ if BUILD_ID in ASPECT:
 # The vertical scale (tall outputs, the high 32 bits of KBAND) is not applied: in the room tutorial step "aim the finger cursor at the speech bubble", the game places the cursor through another conversion (not found) using the unscaled vertical coordinate, and its hit test compares that with the drawn bubble,
 # so scaling y puts them out of line and the step cannot be passed. The room camera rewrites its fovy every frame at 0x261aa0, overriding ASPECT's Hor+, so the room is Vert- on tall pictures;
 # applying Hor+ there as well was tried and the cursor still did not line up, so it is left out. The cost: on tall pictures bubbles sit (16/9) ÷ ratio times closer to the centre, as before e3b9803 ----
-MARKER = {'56bf85bd535413464cb75bb6c2683b67': [(0x350fac, 0x2d2f07a0, 21), (0x21721e8, 0xa9434ff4, 20)]}
+# 1.0.4 把房間的投影換算內聯到 0x321fe0；不能照搬函數內偏移。0x3228a8 存 s0/s1 到 [x29,-0x54]，x21 仍是投影。
+# 1.0.4 inlines the room projection in 0x321fe0; an old function-relative offset is wrong. At 0x3228a8 s0/s1 go to [x29,-0x54], and x21 is still the projection.
+# 內聯位置先保存 s3/s4；s2（深度）與其餘活躍浮點暫存器不動。
+# Save s3/s4 at the inlined site; preserve s2 (depth) and the other live floating-point registers.
+MARKER = {
+    '56bf85bd535413464cb75bb6c2683b67': [(0x350fac, 0x2d2f07a0, 21), (0x21721e8, 0xa9434ff4, 20)],
+    'b39fef373fb12154385d012aab3bc99e': [(0x3228a8, 0x2d3587a0, 21), (0x2117258, 0xa9434ff4, 20)],
+}
 for off, word, preg in MARKER.get(BUILD_ID, []):
     assert struct.unpack_from('<I', IMG, off)[0] == word, f'世界點 → 界面原指令不符 {off:#x}'
     assert off not in kinds and not any(seg[0].address <= off < seg[-1].address + 4 for seg in windows), f'世界點 → 界面與改寫點衝突 {off:#x}'
     start = here(); skips = []
+    inlined = BUILD_ID == 'b39fef373fb12154385d012aab3bc99e' and off == 0x3228a8
+    if inlined: emit(0x2dbe13e3)   # 保存內聯處的 s3/s4 | preserve s3/s4 at the inlined site
     emit(MRS_TPIDRRO(16)); emit_slot_addr(16, 17, 'KRESF'); emit(LDRX(16, 16))
     skips.append(len(patch)); emit(0xB4000010)          # cbz x16, 原指令 | cbz x16, original
     emit(0x1E270203); emit(0xD360FE10); emit(0x1E270204); emit(0x1E241863)   # fmov s3, w16 ; lsr x16, x16, #32 ; fmov s4, w16 ; fdiv s3, s3, s4（輸出比例 | output ratio）
@@ -1081,7 +1113,9 @@ for off, word, preg in MARKER.get(BUILD_ID, []):
     emit(MRS_TPIDRRO(16)); emit_slot_addr(16, 17, 'KBAND'); emit(LDRX(16, 16))
     skips.append(len(patch)); emit(0xB4000010)          # cbz x16, 原指令 | cbz x16, original
     emit(0x1E270204); emit(0x1E240800)                   # fmov s4, w16（kx）; fmul s0, s0, s4
-    orig = here(); emit(word); emit(B(here(), off + 4))
+    orig = here()
+    if inlined: emit(0x2cc213e3)   # 還原 s3/s4 與棧指針 | restore s3/s4 and the stack pointer
+    emit(word); emit(B(here(), off + 4))
     for k in skips:
         w_ = struct.unpack_from('<I', patch, k)[0]
         struct.pack_into('<I', patch, k, w_ | (((orig - (PATCH_OFF + k)) >> 2) & 0x7FFFF) << 5)

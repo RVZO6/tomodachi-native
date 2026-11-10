@@ -14164,6 +14164,7 @@ vs_effect.bin	1599	頂點	fc338fb595687f27	/Effect/static.Nin_NX_NVN.esetb.byml.
 vs_effect.bin	1600	頂點	a4ddfe13abf9a541	/Effect/static.Nin_NX_NVN.esetb.byml.zs#BNSH@0x8a8000#var98
 vs_effect.bin	1601	頂點	799f800b2c34cef1	/Effect/static.Nin_NX_NVN.esetb.byml.zs#BNSH@0x8a8000#var99
 cs_effect.bin	16	計算	787155ba5e0d649c	/Effect/static.Nin_NX_NVN.esetb.byml.zs#BNSH@0xb8e000#var2
+ps_effect.bin	1001	像素	661057df6bd2080d	/v262144/Effect/SequenceSystemDemoDM104005S1b.Nin_NX_NVN.esetb.byml.zs#BNSH@0x4c000#var1
 vs_game.bin	0	頂點	30fa1a1608f4040b	/Shader/MiiMask.bnsh#BNSH@0x0#var0
 ps_game.bin	0	像素	889f06a1447224fb	/Shader/MiiMask.bnsh#BNSH@0x0#var0
 ps_game.bin	1	像素	1a770d8a0e39ff86	/Shader/apkg.Nin_NX_NVN.release.sarc.zs/GameUber.Nin_NX_NVN.bfsha#BNSH@0x15a000#var0

@@ -1,5 +1,5 @@
-# 朋友收集 夢想生活（Switch，基礎版 v0）的遊戲檔案：起機中，內存與 NVN 常數暫沿用馬力歐的值，等起機實測後再改
-# Game profile of Tomodachi Life: Living the Dream (Switch, base game v0): in bring-up; the memory and NVN constants are still Mario's until the bring-up measures them
+# 朋友收集 夢想生活（Switch，v0 與 v262144）的遊戲檔案：起機中，內存與 NVN 常數暫沿用馬力歐的值，等起機實測後再改
+# Game profile of Tomodachi Life: Living the Dream (Switch, v0 and v262144): in bring-up; the memory and NVN constants are still Mario's until the bring-up measures them
 # 格式：鍵 <TAB> 值；一個鍵多個值用空格分隔；build 每版一行；注釋只能獨佔一行。改內存 / NVN 常數後重編宿主；改著色器相關的鍵後按 AGENTS.md 走翻譯鏈流程
 # Format: key <TAB> value; several values of one key are separated by spaces; one build row per version; comments must be on their own line. Rebuild the host after changing memory / NVN constants; after changing shader-related keys follow the chain procedure in AGENTS.md
 
@@ -17,8 +17,9 @@ app_category	public.app-category.simulation-games
 # build <版本> <顯示版本> <模塊>=<構建號>…：NSP 腳本只認這些構建；SDK 20.5.3，比馬力歐的 16 新
 # build <version> <display version> <module>=<build ID>...: the NSP script accepts only these builds; SDK 20.5.3, newer than Mario's 16
 build	v0	1.0.0	main=56bf85bd535413464cb75bb6c2683b67	sdk=651781821e2c2e0b2bdfe905e8676f56
-package	v0
-shader_versions	v0
+build	v262144	1.0.4	main=b39fef373fb12154385d012aab3bc99e	sdk=651781821e2c2e0b2bdfe905e8676f56
+package	v262144
+shader_versions	v0 v262144
 
 # ---- 文件 | Files ----
 modules	main sdk

@@ -97,3 +97,11 @@ run: t_nvn t_dirty_slots t_dirty_race t_builtin t_deswz_gpu t_pace t_refl t_hmap
 	MTL_DEBUG_LAYER=1 ./t_pfv
 	python3 test_tbdr_budget.py
 .PHONY: run
+# 深度附件回授：真實 Metal 副本、清除與唯讀重用，不帶遊戲資料。
+# Depth attachment feedback: real Metal copies, clears and read-only reuse, without game data.
+t_depth_feedback: t_depth_feedback.m ../../host/crash.c $(GFX) $(GFX_H)
+	clang $(CFLAGS) -fobjc-arc -o $@ t_depth_feedback.m ../../host/crash.c $(filter-out ../nvn/nvn_mtl.m ../nvn/nvn_entry.S ../nvn/nvn_thunks.S,$(GFX)) $(FW)
+# 帶長度的 uniform 資源表 ABI 與 32 以上的下標。
+# Bounded uniform-resource table ABI and indices above 31.
+t_ubo_table: t_ubo_table.m ../../host/crash.c $(GFX) $(GFX_H)
+	clang $(CFLAGS) -fobjc-arc -o $@ t_ubo_table.m ../../host/crash.c $(filter-out ../nvn/nvn_mtl.m ../nvn/nvn_entry.S ../nvn/nvn_thunks.S,$(GFX)) $(FW)
