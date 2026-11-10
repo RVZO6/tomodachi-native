@@ -21,6 +21,7 @@
 #include "dm_input.h"
 #include "front.h"
 #include "duo_shell.h"
+#include "DuoDiagnostics.h"
 
 void dm_input_set(uint64_t b, int32_t lx, int32_t ly, int32_t rx, int32_t ry) {
     static uint64_t last; static int q[4];   // 搖桿只在跨過四分之一格時記 | sticks are logged only when they cross a quarter step
@@ -84,7 +85,7 @@ static NSUserDefaults *ud(void) { return NSUserDefaults.standardUserDefaults; }
 int main(int argc, char **argv) {
     @autoreleasepool {   // 日誌寫進 Documents/log.txt（同遊戲 App），模擬器上用 simctl get_app_container 取 | the log goes to Documents/log.txt (as in the game app); on the simulator fetch it with simctl get_app_container
         NSString *doc = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES).firstObject;
-        if (doc && freopen([doc stringByAppendingPathComponent:@"log.txt"].fileSystemRepresentation, "w", stderr)) setvbuf(stderr, NULL, _IOLBF, 0);
+        if (doc) duo_diagnostics_boot(doc);
         duo_boot_guard_begin();     // 同遊戲 App 的開機保護，開場畫面收起時算開好 | the game app's safe boot, counting as up when the opening screen clears
         duo_save_apply_pending();   // 同遊戲 App 開機：設定裡排好的還原 / 從頭開始（這裡的存檔是假的，只看搬動對不對） | as the game app does at boot: Restore / Start Over scheduled in the settings (the save here is a stand-in, only the moves are checked)
         return UIApplicationMain(argc, argv, nil, NSStringFromClass(DuoPreviewApp.class));

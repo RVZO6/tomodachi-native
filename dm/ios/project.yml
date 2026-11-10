@@ -42,6 +42,9 @@ targets:
             UTTypeConformsTo: [public.data]
             UTTypeTagSpecification:
               public.filename-extension: [ltd]
+
+        DMSourceRevision: $(DM_SOURCE_REVISION)
+        DMSourceFingerprint: $(DM_SOURCE_FINGERPRINT)
         UILaunchScreen:                     # iOS 27 起必須有啓動畫面，只能是靜態的：黃底（Gen/Assets.xcassets 的 LaunchYellow）加遊戲 Logo，接著外殼的開場畫面 | from iOS 27 a launch screen is required and can only be static: yellow with the game logo (LaunchYellow in Gen/Assets.xcassets), followed by the shell's opening logo
           UIColorName: LaunchYellow
           UIImageName: LaunchLogo          # 遊戲的標題 Logo（建置時從遊戲檔案取，tools/duo_assets.py --launch），外殼的開場畫面接手時同一張、同一個位置 | the game's title logo (taken from the game files at build time, tools/duo_assets.py --launch); the shell's opening screen takes over with the same picture in the same place

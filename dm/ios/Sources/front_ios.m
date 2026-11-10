@@ -16,6 +16,9 @@
 #include "dm.h"
 #include "dm_aspect.h"
 #include "duo_shell.h"
+#include "DuoDiagnostics.h"
+#include "dm_diagnostics.h"
+#include "dmsh_chain.h"
 
 UIView *dm_gamepad_view(CGRect frame);
 void dm_gamepad_reset(void);
@@ -147,13 +150,18 @@ void front_run(void (*guest)(void)) { guest(); }   // 已在 main.m 的大棧線
 
 // 外殼的觸控手把與實體手把合併後交給宿主（DmGamepad.m 的 duo_pad_publish 是強實現）；HOME = 暫停並打開設定面板 / 收起並繼續（同 Mac 的暫停）；截圖 = 遊戲畫面原解析度存進 Documents/Screenshots（「檔案」App 看得到）
 // The shell's touch controller merged with physical controllers goes to the host (DmGamepad.m's duo_pad_publish is the strong version); HOME = pause and open the settings panel / close it and resume (same as the Mac's pause); capture = the game picture at native resolution saved into Documents/Screenshots (visible in the Files app)
+static void diagnostic_pause_set(BOOL paused) {
+    g_paused = paused;
+    dm_diag_emit(DM_DIAG_LIFECYCLE, paused ? 10 : 11, g_paused, 0, 0, 0);
+    LOG("前端：%s", g_paused ? "暫停" : "繼續");
+    if (g_paused) { duo_shell_reset_input(); dm_focus_set(2); dm_audio_suspend(1); guest_clock_freeze_for(3, 1); dm_gfx_suspend(1); }
+    else { dm_gfx_suspend(0); guest_clock_freeze_for(3, 0); front_ios_audio_session(); dm_audio_suspend(0); dm_focus_set(1); }   // 暫停中可能進過後台，音頻會話要重設（同回前台） | it may have been in the background while paused, so reset the audio session (as on return to the foreground)
+}
 void duo_home_pressed(void) {
     static BOOL closing;
     if (closing) return;
     if (!g_paused) {
-        g_paused = YES;
-        LOG("前端：暫停");
-        duo_shell_reset_input(); dm_focus_set(2); dm_audio_suspend(1); guest_clock_freeze_for(3, 1); dm_gfx_suspend(1);
+        diagnostic_pause_set(YES);
         duo_shell_set_paused(YES);
     } else {
         closing = YES;
@@ -162,12 +170,29 @@ void duo_home_pressed(void) {
             // 收邊時若失活，仍維持暫停，避免在後台提交 GPU 工作。
             // If focus is lost during the short fade, stay paused to avoid background GPU submissions.
             if (UIApplication.sharedApplication.applicationState != UIApplicationStateActive) { duo_menu_audio_open(YES); return; }
-            g_paused = NO;
-            LOG("前端：繼續");
-            dm_gfx_suspend(0); guest_clock_freeze_for(3, 0); front_ios_audio_session(); dm_audio_suspend(0); dm_focus_set(1);
+            diagnostic_pause_set(NO);
             duo_shell_set_paused(NO);
         });
     }
+}
+BOOL duo_game_diagnostic_pause(BOOL pause) { if (!!g_paused == !!pause) return NO; diagnostic_pause_set(pause); return YES; }
+NSDictionary *duo_game_diagnostic_metadata(void) {
+    uint64_t r=front_game_res(1),h=front_game_res(0);AVAudioSession *audio=AVAudioSession.sharedInstance;NSMutableArray *routes=[NSMutableArray array];
+    // 只記路由種類，不記耳機名稱；名稱可能含裝置擁有者的姓名。
+    // Record route types, never headphone names, which may contain the owner's name.
+    for(AVAudioSessionPortDescription *port in audio.currentRoute.outputs)[routes addObject:port.portType];
+    return @{@"game_title_id":@DM_GAME_ID,@"game_build_id":@(dm_main_build()),@"shader_chain":@DMSH_CHAIN,@"docked_render_width":@((uint32_t)r),@"docked_render_height":@(r>>32),@"handheld_render_width":@((uint32_t)h),@"handheld_render_height":@(h>>32),@"audio_sample_rate":@(audio.sampleRate),@"audio_io_buffer_seconds":@(audio.IOBufferDuration),@"audio_output_latency_seconds":@(audio.outputLatency),@"audio_output_channels":@(audio.outputNumberOfChannels),@"audio_route_types":routes};
+}
+void mtl_grab_next_present_scaled(unsigned max_side, void (^cb)(CGImageRef img));
+void duo_game_diagnostic_screenshot(void (^done)(UIImage *,NSString *)) {
+    __block BOOL delivered=NO;
+    mtl_grab_next_present_scaled(1280, ^(CGImageRef image) {
+        UIImage *copy=image?[UIImage imageWithCGImage:image]:nil;
+        dispatch_async(dispatch_get_main_queue(), ^{if(delivered)return;delivered=YES;done(copy,copy?nil:@"The game screenshot could not be read.");});
+    });
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW,1500*NSEC_PER_MSEC),dispatch_get_main_queue(),^{
+        if(delivered)return;delivered=YES;done(nil,@"No game frame arrived within 1.5 seconds. Logs and timings were retained.");
+    });
 }
 void duo_capture_pressed(void) {
     if (g_paused) { LOG("前端：暫停中不截圖（暫停時不出圖）"); return; }   // 同 Mac：截圖在下一次出圖時才拍，暫停中拍不到 | as on the Mac: the shot is taken at the next present, which never comes while paused
@@ -261,6 +286,7 @@ void front_ios_audio_session(void) {
 // Scene lifecycle (called by SceneDelegate in main.m): 0 resign active, 1 enter background, 2 return to foreground, 3 become active. On entering background, freeze the guest clock and suspend after in-flight GPU work completes (submitting GPU work in background gets the process killed).
 // While paused by HOME, sound and graphics are already stopped: going to and from the background only touches focus, and it is still paused on return (as when the Mac app is minimized)
 void front_ios_focus_event(int ev) {
+    dm_diag_emit(DM_DIAG_LIFECYCLE, ev, g_paused, 0, 0, 0);
     if (!g_layer) return;
     switch (ev) {
         case 0: dm_gamepad_reset(); duo_shell_reset_input(); dm_focus_set(2); break;

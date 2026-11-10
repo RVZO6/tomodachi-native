@@ -18,8 +18,14 @@ targets:
       - Sources/DuoSave.m
       - Sources/DuoMii.m
       - Sources/DuoMiiPanel.m
+      - Sources/dm_mii_input.c
+      - Sources/dm_mii_new.c
       - Sources/dm_mii_codec.c
       - Sources/MiiZstd.c
+
+      - Sources/DuoDiagnostics.m
+      - Sources/DmDiagnosticStore.m
+      - Sources/dm_diagnostics.c
       - Sources/duo_shell.h
       - Preview
       - path: GenPreview/duo    # Logo、波浪、塗鴉、靜態圖、闔上的聲音（都只在本機） | logo, wave, doodles, stills, the closing sound (all local only)
