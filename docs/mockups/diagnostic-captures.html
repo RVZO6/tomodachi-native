@@ -156,7 +156,7 @@
         <section aria-labelledby="reports-heading">
           <div class="reports-heading"><h3 id="reports-heading">Saved reports</h3><span class="small" id="report-usage">5.2 / 50 MB used</span></div>
           <div class="report-list" id="report-list"></div>
-          <div class="actions report-actions"><button class="key" type="button" data-action="delete-selected">Delete selected</button><button class="key main" type="button" data-action="share-selected">Share selected</button></div>
+          <div class="actions report-actions"><button class="key" type="button" data-action="delete-selected">Delete selected</button><button class="key main" type="button" data-action="share-selected">Share all</button></div>
         </section>
       </div>
 
@@ -238,13 +238,19 @@
   const hasRoom = () => used()+1.8 <= limit + 1e-6;
   const say = text => { q('#proposal-status').textContent = text; };
   const currentReport = () => reports.find(r => r.id === active);
+  // With nothing selected the share key shares all reports; after a selection it shares the selection. Delete needs a selection.
+  function reportActions() {
+    const share = q('[data-action="share-selected"]'), del = q('[data-action="delete-selected"]');
+    share.textContent = selected.size ? `Share selected (${selected.size})` : 'Share all';
+    share.disabled = !reports.length; del.disabled = !selected.size;
+  }
   function renderReports() {
     if (!reportsDirty) return;
     const list = q('#report-list'); list.replaceChildren();
     for (const r of reports) {
       const row = document.createElement('div'); row.className = 'report';
       const check = document.createElement('input'); check.type = 'checkbox'; check.className = 'report-check'; check.checked = selected.has(r.id); check.setAttribute('aria-label', `Select report: ${r.note || 'No description'}`);
-      check.addEventListener('change', () => { if (check.checked) selected.add(r.id); else selected.delete(r.id); });
+      check.addEventListener('change', () => { if (check.checked) selected.add(r.id); else selected.delete(r.id); reportActions(); });
       const thumb = document.createElement('img'); thumb.src = image; thumb.className = 'thumb'; thumb.alt = 'Report screenshot';
       const info = document.createElement('div'); info.className = 'report-info';
       const title = document.createElement('button'); title.type = 'button'; title.className = 'report-title'; title.textContent = r.note || 'No description yet'; title.addEventListener('click', () => openReport(r.id));
@@ -254,7 +260,7 @@
       row.append(check,thumb,info,open); list.append(row);
     }
     if (!reports.length) { const p = document.createElement('p'); p.textContent = 'No saved reports.'; list.append(p); }
-    reportsDirty = false;
+    reportsDirty = false; reportActions();
   }
   function render() {
     qa('[data-base]').forEach(el => { el.hidden = el.dataset.base !== base; el.inert = !!modal; });
@@ -351,7 +357,7 @@
       case 'change-limit': tab = 'diagnostics'; openSettings(); q('#storage-limit').focus({preventScroll:true}); say('Capture held in memory while you change the limit.'); break;
       case 'close-detail': saveNote(); closeModal(); break;
       case 'share-detail': saveNote(); say('Preview only: the report and its note would open in the share sheet. Nothing was sent.'); break;
-      case 'share-selected': say(selected.size ? `Preview only: ${selected.size} selected report${selected.size === 1 ? '' : 's'} would be shared. Nothing was sent.` : 'Select a report first.'); break;
+      case 'share-selected': { const n = selected.size || reports.length; say(`Preview only: ${selected.size ? 'the' : 'all'} ${n} ${selected.size ? 'selected ' : ''}report${n === 1 ? '' : 's'} would be shared. Nothing was sent.`); break; }
       case 'delete-detail': saveNote(); askDelete([active],'detail'); break;
       case 'delete-selected': askDelete([...selected],'settings'); break;
       case 'cancel-delete': if (deleteReturn === 'detail') showModal('detail'); else closeModal(); break;

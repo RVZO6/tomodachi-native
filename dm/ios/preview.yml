@@ -24,6 +24,7 @@ targets:
       - Sources/MiiZstd.c
 
       - Sources/DuoDiagnostics.m
+      - Sources/DuoDiagnostics.h
       - Sources/DmDiagnosticStore.m
       - Sources/dm_diagnostics.c
       - Sources/duo_shell.h

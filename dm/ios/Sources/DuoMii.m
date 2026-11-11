@@ -97,7 +97,7 @@ static BOOL write_plan(NSDictionary *plan,NSString *path) {
 }
 static BOOL target_ok(NSDictionary *target,dm_mii_slot slots[70],unsigned *slot,NSString **out) {
     id n=target[@"slot"],h=target[@"fingerprint"];if(![n isKindOfClass:NSNumber.class]||![h isKindOfClass:NSString.class])return error(out,@"Choose an islander first.");
-    NSInteger value=[n integerValue];if(value<1||value>70||!slots[value-1].initialized)return error(out,@"Create and save a placeholder islander first.");
+    NSInteger value=[n integerValue];if(value<1||value>70||!slots[value-1].initialized)return error(out,@"That islander is not saved yet. Save in the game, then try again.");
     if(![fingerprint(&slots[value-1]) isEqual:h])return error(out,@"The selected Mii has changed. Reopen the importer and select it again.");*slot=(unsigned)value-1;return YES;
 }
 BOOL duo_mii_queue(NSDictionary *input,NSDictionary *target,NSString **out) {

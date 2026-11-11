@@ -18,8 +18,12 @@ Put units inside the amount controls (`60 s`, `50 MB`), not in setting labels.
 
 Use the existing Settings shell: centred title, Resume, page keys, dashed rule,
 and bottom wave. The proposed Diagnostics tab holds both Recorder and Saved
-reports; neither is a separate destination. The on-screen Capture report button
-starts a capture. Saving closes the dialog without navigating to the reports.
+reports; neither is a separate destination. The on-screen capture control is a
+small round key with a bug icon to the right of the HOME and capture keys. It uses
+the same style and opacity as those keys and starts a capture. Saving closes the
+dialog without navigating to the reports. With no reports selected, the share key
+shares all reports; after a selection it reads Share selected (n). Delete needs a
+selection.
 Report and delete dialogs stay above Settings. A storage warning appears only
 after a capture cannot fit; its usage and required-space lines are centred.
 

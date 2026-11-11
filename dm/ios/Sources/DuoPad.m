@@ -82,8 +82,8 @@ UIImage *duo_asset(NSString *name) {
 
 // ---- 手把 | The controller ----
 __attribute__((weak)) void duo_pad_publish(uint64_t b, int32_t lx, int32_t ly, int32_t rx, int32_t ry) { dm_input_set(b, lx, ly, rx, ry); }
-enum { K_A, K_B, K_X, K_Y, K_ZL, K_L, K_R, K_ZR, K_MINUS, K_PLUS, K_HOME, K_CAP, K_UP, K_RIGHT, K_DOWN, K_LEFT, K_N };
-static const uint64_t k_bit[K_N] = {DM_BTN_A, DM_BTN_B, DM_BTN_X, DM_BTN_Y, DM_BTN_ZL, DM_BTN_L, DM_BTN_R, DM_BTN_ZR, DM_BTN_MINUS, DM_BTN_PLUS, 0, 0,
+enum { K_A, K_B, K_X, K_Y, K_ZL, K_L, K_R, K_ZR, K_MINUS, K_PLUS, K_HOME, K_CAP, K_DBG, K_UP, K_RIGHT, K_DOWN, K_LEFT, K_N };
+static const uint64_t k_bit[K_N] = {DM_BTN_A, DM_BTN_B, DM_BTN_X, DM_BTN_Y, DM_BTN_ZL, DM_BTN_L, DM_BTN_R, DM_BTN_ZR, DM_BTN_MINUS, DM_BTN_PLUS, 0, 0, 0,
                                     DM_BTN_UP, DM_BTN_RIGHT, DM_BTN_DOWN, DM_BTN_LEFT};
 static NSString *const k_name[K_N] = {@"A", @"B", @"X", @"Y", @"ZL", @"L", @"R", @"ZR", @"−", @"+"};
 enum { C_NONE = 0, C_BTN, C_FACE, C_DPAD, C_STICK };   // 觸點佔用的控件 | which control a touch holds
@@ -99,6 +99,7 @@ static const CGFloat   // 草圖單位（626 × 431 的下半） | mockup units 
     K_DPAD_X = 238, K_DPAD_K = 30,                   // 十字鍵：中心離左緣、每臂的格距與大小 | D-pad: centre from the left edge, each arm's spacing and size
     K_RSTICK_X = 238, K_RSTICK_R = 52, K_RKNOB_R = 24,   // 右搖桿：中心離右緣 | right stick: centre from the right edge
     K_SYS_DX = 30, K_SYS_DY = 34, K_SYS_R = 16,      // HOME / 截圖：中心離中線、離底 | HOME / capture: centre from the midline and from the bottom
+    K_DBG_R = 12, K_DBG_GAP = 16,                    // 診斷小鍵：半徑、離截圖鍵的間距 | the small diagnostic key: radius, gap from the capture key
     K_DEPTH = 3,                                     // 鍵的下緣高 | a key's lower-edge height
     K_STICK_GRAB = 1.35, K_DPAD_GRAB = 1.5, K_FULL = 0.8, K_DEAD = 0.1, K_TAP_S = 0.3;
 
@@ -111,6 +112,7 @@ static const CGFloat   // 草圖單位（626 × 431 的下半） | mockup units 
     UITouch *_stick[2]; CGPoint _stickNow[2], _stickP0[2]; CFTimeInterval _stickT0[2]; BOOL _stickMoved[2];   // _stickMoved：離按下點移動過、或不是按在手柄頭上（不算輕點） | _stickMoved: travelled from the touch-down point, or not pressed on the knob (not a tap)
     CGFloat _opacity;                               // 浮在畫面上時鍵的不透明度（設定「不透明度」，缺省 0.6） | key opacity while floating over the picture (the Opacity setting, 0.6 by default)
     BOOL _keysOff;                                  // 接著實體手把：只留 HOME 與截圖 | a physical controller is connected: only HOME and capture remain
+    BOOL _dbgShown, _dbgEnabled; void (^_dbgTap)(void);   // 診斷小鍵：顯示、可按、點按的動作 | the small diagnostic key: shown, enabled, tap action
     uint64_t _keys, _clicks;                        // 按著的鍵（K_ 位）、輕點送出的 L3 / R3 | keys held (K_ bits), L3 / R3 sent by a tap
     DuoKeyLayer *_key[K_N], *_knob[2];
     CAShapeLayer *_ring[2], *_arrow[4];
@@ -129,6 +131,7 @@ static const CGFloat   // 草圖單位（626 × 431 的下半） | mockup units 
             [self.layer addSublayer:_ring[i]];
         }
         for (int k = 0; k < K_N; k++) { _key[k] = [DuoKeyLayer layer]; [self.layer addSublayer:_key[k]]; }
+        _key[K_DBG].hidden = YES;   // 由外殼按設定打開 | the shell shows it per the setting
         for (int i = 0; i < 2; i++) { _knob[i] = [DuoKeyLayer layer]; [self.layer addSublayer:_knob[i]]; }
         for (int i = 0; i < 4; i++) { _arrow[i] = [CAShapeLayer layer]; _arrow[i].fillColor = [duo_rgb(DUO_NAVY) colorWithAlphaComponent:0.45].CGColor; [_key[K_UP + i].content addSublayer:_arrow[i]]; }
         // HOME：房子圖標；截圖：方鍵上一個圈（同 Switch 的截圖鍵） | HOME: a house icon; capture: a ring on a square key (as on the Switch's capture button)
@@ -174,6 +177,7 @@ static CGPoint at(CGRect a, int side, CGFloat dx, CGFloat y) {   // side：-1 �
         case K_ZL: case K_ZR: c = at(a, k == K_ZL ? -1 : 1, K_ZL_X * u, y); w = K_ZL_W * u; return CGRectMake(c.x - w / 2, y - K_SH_H * u / 2, w, K_SH_H * u);
         case K_L: case K_R: c = at(a, k == K_L ? -1 : 1, K_L_X * u, y); w = K_L_W * u; return CGRectMake(c.x - w / 2, y - K_SH_H * u / 2, w, K_SH_H * u);
         case K_MINUS: case K_PLUS: r = K_PM_R * u; c = CGPointMake([self midX:k == K_PLUS r:r dx:K_PM_DX], y); break;
+        case K_DBG: { CGRect cr = [self btnRect:K_CAP]; r = K_DBG_R * u; c = CGPointMake(CGRectGetMaxX(cr) + K_DBG_GAP * u + r, CGRectGetMidY(cr)); break; }   // 截圖鍵右邊 | right of the capture key
         default: r = K_SYS_R * u; c = CGPointMake([self midX:k == K_CAP r:r dx:K_SYS_DX], sy); break;
     }
     return CGRectMake(c.x - r, c.y - r, 2 * r, 2 * r);
@@ -215,8 +219,8 @@ static void place(DuoKeyLayer *k, CGRect frame, CGPathRef (^shape)(CGRect bounds
     UIColor *drop = _overlay ? [UIColor colorWithWhite:0 alpha:0.28] : duo_rgb(DUO_DROP);   // 落影：黃底上是深黃，畫面上是淡黑 | the shadow: darker yellow on the yellow, faint black over the picture
     for (int k = 0; k < K_N; k++) { _key[k].contentsScale = s; _key[k].depth = K_DEPTH * u; _key[k].opacity = op; _key[k].dropColor = drop; }
     for (int i = 0; i < 2; i++) _knob[i].dropColor = drop;
-    for (int k = K_ZL; k <= K_CAP; k++) {
-        CGRect r = [self btnRect:k]; BOOL round = k == K_MINUS || k == K_PLUS || k == K_HOME;
+    for (int k = K_ZL; k <= K_DBG; k++) {
+        CGRect r = [self btnRect:k]; BOOL round = k == K_MINUS || k == K_PLUS || k == K_HOME || k == K_DBG;
         place(_key[k], r, ^CGPathRef(CGRect b) {
             if (k == K_CAP) return CGPathCreateWithRoundedRect(CGRectInset(b, 1.5 * u, 1.5 * u), 6 * u, 6 * u, NULL);
             return round ? circle(b) : CGPathCreateWithRoundedRect(b, b.size.height / 2, b.size.height / 2, NULL);
@@ -246,6 +250,8 @@ static void place(DuoKeyLayer *k, CGRect frame, CGPathRef (^shape)(CGRect bounds
     }
     // HOME 圖標、截圖鍵的圈 | the HOME icon, the capture key's ring
     [_key[K_HOME] setSymbol:@"house.fill" size:17 * u color:navy];
+    [_key[K_DBG] setSymbol:@"ladybug.fill" size:12 * u color:navy];   // 診斷小鍵：蟲子圖標 | the small diagnostic key: a bug icon
+    _key[K_DBG].opacity = op * (_dbgEnabled ? 1 : 0.4);   // 擷取中變淡 | dimmed while a capture is running
     CAShapeLayer *cring = _key[K_CAP].content.sublayers.firstObject; CGFloat cr = 5.5 * u; CGSize cb = _key[K_CAP].bounds.size;
     CGPathRef cp = circle(CGRectMake(cb.width / 2 - cr, cb.height / 2 - cr, 2 * cr, 2 * cr)); cring.path = cp; cring.lineWidth = 2.5 * u; CGPathRelease(cp);
     // 搖桿：淡白圓盤 + 白色手柄頭 | sticks: a pale disc and a white knob
@@ -265,7 +271,7 @@ static void place(DuoKeyLayer *k, CGRect frame, CGPathRef (^shape)(CGRect bounds
 // ---- 觸控 | Touch ----
 static CGFloat dist(CGPoint a, CGPoint b) { return hypot(a.x - b.x, a.y - b.y); }
 - (int)btnAt:(CGPoint)p {   // 鎖定的鍵：外框四周各放寬 8 點 | locked keys: each frame widened by 8 points on every side
-    for (int k = _keysOff ? K_HOME : K_ZL; k <= K_CAP; k++) if (CGRectContainsPoint(CGRectInset([self btnRect:k], -8 * self.u, -8 * self.u), p)) return k;
+    for (int k = _keysOff ? K_HOME : K_ZL; k <= K_DBG; k++) if ((k != K_DBG || _dbgShown) && CGRectContainsPoint(CGRectInset([self btnRect:k], -8 * self.u, -8 * self.u), p)) return k;
     return -1;
 }
 - (uint64_t)faceAt:(CGPoint)p {   // 手指下的菱形鍵（兩鍵之間兩個都算） | diamond keys under the finger (between two keys both count)
@@ -303,7 +309,7 @@ static CGFloat dist(CGPoint a, CGPoint b) { return hypot(a.x - b.x, a.y - b.y); 
         CGFloat m = fmin((d - dz) / (R * K_FULL - dz), 1) / d;   // 死區外從 0 起，推到 0.8 倍環半徑為滿 | from 0 outside the dead zone to full at 0.8 of the ring radius
         ax[i * 2] = (int32_t)lrint(o.x * m * DM_STICK_MAX); ax[i * 2 + 1] = (int32_t)lrint(-o.y * m * DM_STICK_MAX);   // 宿主：上為正 | host: up is positive
     }
-    uint64_t newly = keys & ~_keys & ~((1ull << K_HOME) | (1ull << K_CAP));
+    uint64_t newly = keys & ~_keys & ~((1ull << K_HOME) | (1ull << K_CAP) | (1ull << K_DBG));
     if (newly) [_haptic impactOccurred];
     _keys = keys;
     uint64_t btn = 0; for (int k = 0; k < K_N; k++) if ((keys >> k) & 1) btn |= k_bit[k];
@@ -345,6 +351,7 @@ static CGFloat dist(CGPoint a, CGPoint b) { return hypot(a.x - b.x, a.y - b.y); 
         uint64_t v = [_owner objectForKey:t].unsignedLongLongValue; int c = (int)(v & 0xff); int k = (int)(v >> 8);
         if (ended && c == C_BTN && (k == K_HOME || k == K_CAP) && CGRectContainsPoint(CGRectInset([self btnRect:k], -8 * self.u, -8 * self.u), [t locationInView:self]))
             k == K_HOME ? duo_home_pressed() : duo_capture_pressed();   // 在鍵上鬆手才算 | counts only when released on the key
+        if (ended && c == C_BTN && k == K_DBG && _dbgEnabled && _dbgTap && CGRectContainsPoint(CGRectInset([self btnRect:k], -8 * self.u, -8 * self.u), [t locationInView:self])) _dbgTap();
         for (int i = 0; i < 2; i++) if (t == _stick[i]) {
             if (ended && !_stickMoved[i] && t.timestamp - _stickT0[i] < K_TAP_S) [self click:i];
             _stick[i] = nil;
@@ -366,10 +373,18 @@ static CGFloat dist(CGPoint a, CGPoint b) { return hypot(a.x - b.x, a.y - b.y); 
     if (off == _keysOff) return;
     [self reset]; _keysOff = off;
     [CATransaction begin]; [CATransaction setDisableActions:YES];
-    for (int k = 0; k < K_N; k++) _key[k].hidden = off && k != K_HOME && k != K_CAP;
+    for (int k = 0; k < K_N; k++) _key[k].hidden = k == K_DBG ? !_dbgShown : off && k != K_HOME && k != K_CAP;
     for (int i = 0; i < 2; i++) _ring[i].hidden = _knob[i].hidden = off;
     [CATransaction commit];
 }
+
+- (void)setDebugShown:(BOOL)shown enabled:(BOOL)enabled {   // 診斷小鍵的顯示與可按（接著實體手把時也留著） | the diagnostic key's visibility and enabled state (kept while a physical controller is connected)
+    if (shown == _dbgShown && enabled == _dbgEnabled) return;
+    _dbgShown = shown; _dbgEnabled = enabled;
+    [CATransaction begin]; [CATransaction setDisableActions:YES]; _key[K_DBG].hidden = !shown; [CATransaction commit];
+    [self setNeedsLayout];
+}
+- (void)setDebugTap:(void (^)(void))tap { _dbgTap = [tap copy]; }
 
 - (void)refresh {   // 按下狀態 → 鍵面沉下，搖桿 → 手柄頭位置 | pressed state → sunken faces, sticks → knob position
     [CATransaction begin]; [CATransaction setDisableActions:YES];
@@ -388,3 +403,5 @@ void duo_pad_set_opacity(UIView *pad, CGFloat a) { if (![pad isKindOfClass:DuoPa
 void duo_pad_arrange(UIView *pad, BOOL overlay, CGRect fold) { if ([pad isKindOfClass:DuoPad.class]) [(DuoPad *)pad setOverlay:overlay fold:fold]; }
 void duo_pad_reset(UIView *pad) { if ([pad isKindOfClass:DuoPad.class]) [(DuoPad *)pad reset]; }
 void duo_pad_set_hidden(UIView *pad, BOOL hidden) { if ([pad isKindOfClass:DuoPad.class]) [(DuoPad *)pad setKeysOff:hidden]; }   // 接上實體手把時藏起遊戲鍵 | hide the game keys while a physical controller is connected
+void duo_pad_set_debug(UIView *pad, BOOL shown, BOOL enabled) { if ([pad isKindOfClass:DuoPad.class]) [(DuoPad *)pad setDebugShown:shown enabled:enabled]; }
+void duo_pad_set_debug_tap(UIView *pad, void (^tap)(void)) { if ([pad isKindOfClass:DuoPad.class]) [(DuoPad *)pad setDebugTap:tap]; }

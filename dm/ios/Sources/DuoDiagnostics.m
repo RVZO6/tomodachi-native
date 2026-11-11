@@ -334,7 +334,12 @@ UIView *duo_diagnostics_settings(CGFloat width,CGFloat u,void (^refresh)(void)){
     if(!count)label(L(@"還沒有報告。",@"No saved reports."),16,UIFontWeightSemibold);
     if(count<m.reports.count){DuoPill *more=duo_make_pill(L(@"顯示更多",@"Show more"),nil,0,u,^{m.visibleCount+=20;refresh();});more.frame=CGRectMake(0,y,width,55*u);[page addSubview:more];y+=70*u;}
     CGFloat bw=(width-14*u)/2;
-    DuoPill *del=duo_make_pill(L(@"刪除所選",@"Delete selected"),nil,0,u,^{[m remove:m.selected.allObjects];}),*share=duo_make_pill(L(@"分享所選",@"Share selected"),nil,2,u,^{[m share:m.selected.allObjects];});
-    del.frame=CGRectMake(0,y,bw,57*u);share.frame=CGRectMake(bw+14*u,y,bw,57*u);del.enabled=share.enabled=!m.capturing&&!m.exporting;[page addSubview:del];[page addSubview:share];y+=73*u;
+    // 沒選取時「分享全部」，選了就「分享所選（n）」；刪除只對所選，沒選取時不能按。
+    // With nothing selected, Share all; after a selection, Share selected (n). Delete applies only to a selection and is disabled without one.
+    NSUInteger picked=m.selected.count;BOOL idle=!m.capturing&&!m.exporting;
+    NSString *shareTitle=picked?[NSString stringWithFormat:L(@"分享所選（%lu）",@"Share selected (%lu)"),(unsigned long)picked]:L(@"分享全部",@"Share all");
+    DuoPill *del=duo_make_pill(L(@"刪除所選",@"Delete selected"),nil,0,u,^{[m remove:m.selected.allObjects];}),*share=duo_make_pill(shareTitle,nil,2,u,^{
+        NSMutableArray<NSString *> *ids=[NSMutableArray array];if(m.selected.count)[ids addObjectsFromArray:m.selected.allObjects];else for(NSDictionary *r in m.reports)[ids addObject:r[@"id"]];[m share:ids];});
+    del.frame=CGRectMake(0,y,bw,57*u);share.frame=CGRectMake(bw+14*u,y,bw,57*u);del.enabled=idle&&picked>0;share.enabled=idle&&m.reports.count>0;[page addSubview:del];[page addSubview:share];y+=73*u;
     page.frame=CGRectMake(0,0,width,y);return page;
 }

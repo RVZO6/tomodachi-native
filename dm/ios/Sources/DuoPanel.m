@@ -442,11 +442,19 @@ DuoPill *duo_make_pill(NSString *title, NSString *sub, int style, CGFloat u, voi
     [self heading:L(@"從頭開始", @"Start Over")];
     [self grid:@[[self pill:L(@"從頭開始…", @"Start Over…") sub:nil style:PILL_PLAIN tap:^{ [ws ask:@"fresh"]; }]] cols:2 tall:56];
 }
+// 有變更要等重開遊戲才套用時，頁底一行橘字說明加「關閉遊戲…」鍵；寬時並排，窄時上下排。
+// When changes wait for the next launch, the page ends with one orange line and a Close Game… key: side by side when wide, stacked when narrow.
 - (void)quitSection {
     __weak DuoPanel *ws = self;
-    [self heading:L(@"關閉遊戲", @"Close Game")];
-    [self warn:L(@"想現在套用，就關閉遊戲再開一次。", @"To apply these changes now, close the game and open it again.")];
-    [self grid:@[[self pill:L(@"關閉遊戲…", @"Close Game…") sub:nil style:PILL_PLAIN tap:^{ [ws ask:@"quit"]; }]] cols:2 tall:56];
+    _y += 24 * _u;
+    NSString *t = duo_save_pending() ? L(@"存檔的變更會在重新開啟遊戲後套用。", @"Your save change applies when you reopen the game.") : L(@"部分設定會在重新開啟遊戲後套用。", @"Some changes apply when you reopen the game.");
+    DuoPill *p = [self pill:L(@"關閉遊戲…", @"Close Game…") sub:nil style:PILL_PLAIN tap:^{ [ws ask:@"quit"]; }];
+    CGFloat gap = 16 * _u, h = 60 * _u, bw = MIN(240 * _u, _bodyW * 0.4);
+    if (_bodyW < 520 * _u) { [self warn:t]; p.frame = CGRectMake(0, _y, _bodyW, h); [_body addSubview:p]; _y += h + 8 * _u; return; }
+    UILabel *l = [UILabel new]; l.text = t; l.font = duo_font(16 * _u, UIFontWeightBold); l.textColor = duo_rgb(k_note); l.numberOfLines = 0;
+    CGFloat lw = _bodyW - bw - gap, lh = ceil([l sizeThatFits:CGSizeMake(lw, CGFLOAT_MAX)].height), rowH = MAX(h, lh);
+    l.frame = CGRectMake(0, _y + (rowH - lh) / 2, lw, lh); [_body addSubview:l];
+    p.frame = CGRectMake(_bodyW - bw, _y + (rowH - h) / 2, bw, h); [_body addSubview:p]; _y += rowH + 8 * _u;
 }
 
 - (void)openMii:(BOOL)exportMode {
@@ -573,7 +581,7 @@ DuoPill *duo_make_pill(NSString *title, NSString *sub, int style, CGFloat u, voi
                 }
                 default: [self pageSave]; break;
             }
-            if (!_confirm && boot_changed()) [self quitSection];
+            if (!_confirm && !_mii && boot_changed()) [self quitSection];   // Mii 頁有自己的流程 | the Mii pages have their own flow
         }
         _body.frame = CGRectMake(x0, 0, W, _y + 16 * u);
     }

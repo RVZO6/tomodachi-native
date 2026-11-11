@@ -98,7 +98,6 @@ static double g_picture_aspect = 1920.0 / 1350.0;   // 主線程寫、各線程�
     CIContext *_ci;
     double _contentAspect;                               // 非靜態圖畫面的內容寬高比（遊戲出圖形狀），按它等比置中；0 = 鋪滿 | content aspect of a non-still picture (the game's output shape), centred at it; 0 = fill
     DuoPanel *_settings; BOOL _paused, _readyCalled;      // 設定面板（暫停時開著） | the settings panel (open while paused)
-    DuoPill *_diagnosticKey;
     NSInteger _wantPage;                                 // 等著打開的設定頁（快速動作、-DuoPanel；開場畫面收起後打開），沒有 = -1 | a settings page waiting to open (quick action, -DuoPanel; opened once the opening screen clears), none = -1
     BOOL _ctrl;                                          // 接著實體手把 | a physical controller is connected
 }
@@ -128,8 +127,7 @@ static double g_picture_aspect = 1920.0 / 1350.0;   // 主線程寫、各線程�
     [self loadClick];
     _wantPage = duo_shell_page_named([NSUserDefaults.standardUserDefaults stringForKey:@"DuoPanel"] ?: @"");   // 啓動參數 -DuoPanel save 等：開場後直接打開那頁 | the launch argument -DuoPanel save etc.: open that page after the opening
     [self applyPadPrefs];
-    _diagnosticKey=duo_make_pill([NSLocale.preferredLanguages.firstObject hasPrefix:@"zh"]?@"擷取報告":@"Capture report",nil,0,1,^{duo_diagnostics_request();});
-    [self.view insertSubview:_diagnosticKey belowSubview:_splash];
+    duo_pad_set_debug_tap(_pad, ^{ duo_diagnostics_request(); });   // 截圖鍵旁的診斷小鍵：擷取報告 | the small diagnostic key beside capture: capture a report
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(diagnosticChanged:) name:DuoDiagnosticsChanged object:nil];
 #if DM_DUO_SDK_27_1
     if (@available(iOS 27.1, *)) {
@@ -215,10 +213,7 @@ static double g_picture_aspect = 1920.0 / 1350.0;   // 主線程寫、各線程�
     g_picture_aspect = topH > 0 ? b.size.width / topH : k_duo_shape;
     _pictureHost.frame = _top; _picture.frame = [self pictureFrameIn:_pictureHost.bounds]; _touch.frame = _picture.frame;
     _settings.frame = b;
-    CGFloat du=MIN(1,MAX(.8,b.size.width/720)),dw=178*du;
-    _diagnosticKey.frame=CGRectMake(CGRectGetMidX(_top)-dw/2,CGRectGetMinY(_top)+MAX(self.view.safeAreaInsets.top,8)+60*du,dw,54*du);
-    _diagnosticKey.depth=4*du;_diagnosticKey.title.font=duo_font(15*du,UIFontWeightBold);
-    _diagnosticKey.hidden=_paused||_splash!=nil||!duo_diagnostics_button_visible();_diagnosticKey.enabled=!duo_diagnostics_busy();
+    duo_pad_set_debug(_pad, !_paused && _splash == nil && duo_diagnostics_button_visible(), !duo_diagnostics_busy());
     _panel.frame = _overlay ? b : CGRectMake(0, panelY, b.size.width, b.size.height - panelY);
     _pad.frame = _panel.bounds;
     duo_pad_arrange(_pad, _overlay, _overlay && !across && !CGRectIsNull(fold) ? [_pad convertRect:fold fromView:self.view] : CGRectNull);

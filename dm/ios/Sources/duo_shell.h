@@ -51,6 +51,10 @@ void duo_pad_reset(UIView *pad);                        // 鬆開所有鍵（失
 void duo_pad_arrange(UIView *pad, BOOL overlay, CGRect fold);
 void duo_pad_set_hidden(UIView *pad, BOOL hidden);      // 藏起觸控的遊戲鍵（HOME、截圖留著）：接上實體手把時，或設定裡選了隱藏 | hide the touch game keys (HOME and capture stay): while a physical controller is connected, or when hidden in settings
 void duo_pad_set_opacity(UIView *pad, CGFloat opacity); // 浮在畫面上（橫拿）時按鍵的不透明度 | the keys' opacity while they float over the picture (sideways)
+// 診斷小鍵：截圖鍵右邊的小圓鍵（蟲子圖標），樣式與不透明度同其他鍵；enabled = NO 時變淡、不能按
+// The small diagnostic key: a small round key (bug icon) right of the capture key, styled and translucent like the other keys; enabled = NO dims it and ignores taps
+void duo_pad_set_debug(UIView *pad, BOOL shown, BOOL enabled);
+void duo_pad_set_debug_tap(UIView *pad, void (^tap)(void));
 // 手把狀態的出口（弱實現 = dm_input_set；遊戲 App 給強實現，與實體手把合併） | where the controller state goes (weak = dm_input_set; the game app gives a strong one that merges physical controllers)
 void duo_pad_publish(uint64_t buttons, int32_t lx, int32_t ly, int32_t rx, int32_t ry);
 

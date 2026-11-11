@@ -18,13 +18,46 @@ static UIImage *mii_placeholder(void) {
         if(!image)image=[[UIImage systemImageNamed:@"person.fill"] imageWithTintColor:duo_rgb(0x777777) renderingMode:UIImageRenderingModeAlwaysOriginal];
     });return image;
 }
+// 沒有島民時的空白頁：遊戲的備用人像排成三人一組，站在淺色地面上，旁邊幾顆白色閃光。
+// Empty state with no islanders: three of the game's fallback silhouettes in a group on a pale ground, with a few white sparkles.
+// 地面畫在人像前面，蓋住備用圖裁切後的底邊；兩旁的人像染成白色。
+// The ground is drawn in front of the figures to hide the cropped lower edge of the fallback image; the two side figures are tinted white.
+@interface DuoMiiEmpty : UIView
+@property(nonatomic) CGFloat unit;
+@end
+@implementation DuoMiiEmpty { UIImageView *_fig[3];CAShapeLayer *_ground,*_spark;UILabel *_title,*_body; }
+- (instancetype)init {
+    if((self=[super initWithFrame:CGRectZero])){
+        _unit=1;_ground=[CAShapeLayer layer];_ground.fillColor=duo_rgb(DUO_WAVE).CGColor;[self.layer addSublayer:_ground];
+        _spark=[CAShapeLayer layer];_spark.fillColor=UIColor.whiteColor.CGColor;[self.layer addSublayer:_spark];
+        for(int i=0;i<3;i++){_fig[i]=[[UIImageView alloc] initWithImage:i==1?mii_placeholder():[mii_placeholder() imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate]];_fig[i].tintColor=UIColor.whiteColor;_fig[i].contentMode=UIViewContentModeScaleAspectFit;_fig[i].layer.anchorPoint=CGPointMake(.5,1);}
+        [self addSubview:_fig[0]];[self addSubview:_fig[2]];[self addSubview:_fig[1]];_fig[0].alpha=_fig[2].alpha=.8;_ground.zPosition=1;
+        _title=[UILabel new];_title.text=ML(@"島上還沒有島民",@"No islanders yet");_title.textColor=duo_rgb(DUO_NAVY);_title.textAlignment=NSTextAlignmentCenter;[self addSubview:_title];
+        _body=[UILabel new];_body.text=ML(@"在遊戲裡建立的島民會出現在這裡。",@"Islanders you create in the game appear here.");_body.textColor=[duo_rgb(DUO_NAVY) colorWithAlphaComponent:.72];_body.textAlignment=NSTextAlignmentCenter;_body.numberOfLines=0;[self addSubview:_body];
+        self.isAccessibilityElement=YES;self.accessibilityLabel=[NSString stringWithFormat:@"%@. %@",_title.text,_body.text];
+    }return self;
+}
+static void star(CGMutablePathRef p,CGFloat x,CGFloat y,CGFloat r) {   // 四角閃光 | a four-point sparkle
+    CGFloat k=r*.28;CGPathMoveToPoint(p,NULL,x,y-r);CGPathAddQuadCurveToPoint(p,NULL,x+k,y-k,x+r,y);CGPathAddQuadCurveToPoint(p,NULL,x+k,y+k,x,y+r);
+    CGPathAddQuadCurveToPoint(p,NULL,x-k,y+k,x-r,y);CGPathAddQuadCurveToPoint(p,NULL,x-k,y-k,x,y-r);CGPathCloseSubpath(p);
+}
+- (void)layoutSubviews {
+    [super layoutSubviews];CGFloat u=_unit,w=self.bounds.size.width,cx=w/2,base=150*u,aspect=113.0/177;
+    CGPathRef g=CGPathCreateWithEllipseInRect(CGRectMake(cx-165*u,base-12*u,330*u,36*u),NULL);_ground.path=g;CGPathRelease(g);
+    CGMutablePathRef sp=CGPathCreateMutable();star(sp,cx-138*u,44*u,11*u);star(sp,cx+132*u,30*u,14*u);star(sp,cx+156*u,86*u,7*u);star(sp,cx-112*u,96*u,6*u);_spark.path=sp;CGPathRelease(sp);
+    for(int i=0;i<3;i++){CGFloat h=(i==1?124:96)*u,dx=(i-1)*78*u;_fig[i].transform=CGAffineTransformIdentity;_fig[i].bounds=CGRectMake(0,0,h*aspect,h);_fig[i].center=CGPointMake(cx+dx,base+(i==1?4:-2)*u);_fig[i].transform=CGAffineTransformMakeRotation((i-1)*.12);}
+    _title.font=duo_font(21*u,UIFontWeightHeavy);_title.frame=CGRectMake(0,base+26*u,w,30*u);
+    _body.font=duo_font(15*u,UIFontWeightSemibold);_body.frame=CGRectMake(0,base+58*u,w,40*u);
+}
+@end
+
 @interface DuoMiiPanel () <UIDocumentPickerDelegate>
 @end
 @implementation DuoMiiPanel {
     BOOL _exportMode;NSInteger _stage;CGFloat _unit;NSArray<NSDictionary *> *_roster;NSDictionary *_input,*_target;
     DuoPill *_choose,*_replace,*_goBack,*_yes,*_cancel,*_cancelQueued,*_settings;
     UIView *_preview,*_identity,*_rosterBody;CAGradientLayer *_pale;UIScrollView *_rosterScroll;
-    UIImageView *_head;UILabel *_name,*_file,*_question,*_notice,*_hint;NSArray<DuoPill *> *_targets;
+    UIImageView *_head;UILabel *_name,*_file,*_question,*_notice;NSArray<DuoPill *> *_targets;DuoMiiEmpty *_empty;
     NSString *_message;NSURL *_exportURL;
 }
 - (BOOL)exportMode { return _exportMode; }
@@ -46,7 +79,7 @@ static UIImage *mii_placeholder(void) {
         _file=[UILabel new];_file.textAlignment=NSTextAlignmentLeft;_file.lineBreakMode=NSLineBreakByTruncatingMiddle;_file.textColor=[duo_rgb(DUO_NAVY) colorWithAlphaComponent:.72];[_identity addSubview:_file];
         _replace=[self key:mode?ML(@"匯出",@"Export"):ML(@"替換",@"Replace") style:PILL_CONFIRM action:^{[ws replacePressed];}];[_preview addSubview:_replace];
         _question=[self label];_notice=[self label];_notice.textColor=duo_rgb(0xF2660D);_notice.accessibilityTraits=UIAccessibilityTraitStaticText;
-        _hint=[self label];_hint.textColor=[duo_rgb(DUO_NAVY) colorWithAlphaComponent:.72];
+        _empty=[DuoMiiEmpty new];[self addSubview:_empty];
         _rosterScroll=[UIScrollView new];_rosterScroll.showsHorizontalScrollIndicator=NO;_rosterScroll.alwaysBounceVertical=NO;[self addSubview:_rosterScroll];_rosterBody=[UIView new];[_rosterScroll addSubview:_rosterBody];
         NSString *why=nil;_roster=duo_mii_roster(&why)?:@[];if(why)_message=why;
         NSMutableArray *targets=[NSMutableArray array];
@@ -72,7 +105,7 @@ static UIImage *mii_placeholder(void) {
 }
 - (void)replacePressed {
     if(!_exportMode&&!_input){_message=ML(@"請先選取一份 Mii 檔案。",@"Choose a Mii file first.");[self update:NO];return;}
-    if(!_target){_message=_roster.count?ML(@"請選擇要替換的島民。",@"Choose an islander first."):ML(@"請先在遊戲建立並儲存一位島民。",@"Create and save a placeholder islander first.");[self update:NO];UIAccessibilityPostNotification(UIAccessibilityAnnouncementNotification,_message);return;}
+    if(!_target){_message=_roster.count?ML(@"請選擇要替換的島民。",@"Choose an islander first."):ML(@"請先在遊戲裡建立一位島民。",@"Create an islander in the game first.");[self update:NO];UIAccessibilityPostNotification(UIAccessibilityAnnouncementNotification,_message);return;}
     _stage=1;_message=nil;[self update:YES];
 }
 - (void)confirm {
@@ -100,29 +133,35 @@ static UIImage *mii_placeholder(void) {
     (void)picker;if(_exportURL){[NSFileManager.defaultManager removeItemAtURL:_exportURL.URLByDeletingLastPathComponent error:nil];_exportURL=nil;}[self update:NO];
 }
 - (CGFloat)heightForWidth:(CGFloat)width unit:(CGFloat)unit {
-    (void)width;_unit=unit;return (_stage?430:(_exportMode?468:540))*unit;
+    (void)width;_unit=unit;return (_stage?430:!_roster.count?(_message?420:360):(_exportMode?432:504))*unit;
 }
 - (void)layoutSubviews {
     [super layoutSubviews];CGFloat u=_unit,w=self.bounds.size.width,gap=14*u,rowH=68*u;
     BOOL choosing=_stage==0,ready=_exportMode?_target!=nil:_input!=nil;
-    _choose.hidden=!choosing||_exportMode;_rosterScroll.hidden=!choosing;_hint.hidden=!choosing;_replace.hidden=!choosing;_goBack.hidden=!choosing;
+    BOOL empty=!_roster.count;
+    _choose.hidden=!choosing||_exportMode||empty;_rosterScroll.hidden=!choosing||empty;_empty.hidden=!choosing||!empty;_question.hidden=choosing&&empty;_replace.hidden=!choosing;_goBack.hidden=!choosing;
     _yes.hidden=_cancel.hidden=_stage!=1;_cancelQueued.hidden=_settings.hidden=_stage!=2;
     NSArray *keys=@[_choose,_replace,_goBack,_yes,_cancel,_cancelQueued,_settings];for(DuoPill *p in keys){p.depth=4*u;p.title.font=duo_font(19*u,UIFontWeightHeavy);}
     for(NSUInteger i=0;i<_targets.count;i++){DuoPill *p=_targets[i];NSDictionary *row=_roster[i];BOOL picked=[row[@"slot"] isEqual:_target[@"slot"]];p.style=picked?PILL_PICKED:PILL_PLAIN;p.depth=4*u;p.title.font=duo_font(17*u,UIFontWeightHeavy);p.sub.font=duo_font(11*u,UIFontWeightSemibold);p.accessibilityTraits=UIAccessibilityTraitButton|(picked?UIAccessibilityTraitSelected:0);}
-    _question.font=duo_font(21*u,UIFontWeightHeavy);_hint.font=duo_font(12*u,UIFontWeightSemibold);_notice.font=duo_font(14*u,UIFontWeightBold);
+    _question.font=duo_font(21*u,UIFontWeightHeavy);_notice.font=duo_font(14*u,UIFontWeightBold);
     CGFloat y=0;
-    if(choosing){
+    if(choosing&&empty){
+        // 沒有島民：只顯示空白頁插圖、需要時的錯誤和返回鍵。
+        // No islanders: show only the empty-state picture, an error when there is one, and Back.
+        _preview.hidden=YES;_empty.unit=u;_empty.frame=CGRectMake(0,16*u,w,260*u);[_empty setNeedsLayout];y=284*u;
+        _notice.text=_message;_notice.frame=CGRectMake(0,y,w,_message?58*u:0);y+=_message?64*u:0;
+        _goBack.frame=CGRectMake(0,y,MIN(w,190*u),56*u);
+    }else if(choosing){
         _choose.frame=CGRectMake((w-MIN(w,380*u))/2,0,MIN(w,380*u),60*u);
         y=_exportMode?0:72*u;
         _preview.frame=CGRectMake(0,y,w,100*u);y+=112*u;_preview.hidden=!ready;
         _question.text=_exportMode?ML(@"想匯出哪位島民？",@"Who would you like to export?"):ML(@"想替換哪位島民？",@"Who would you like to replace?");_question.frame=CGRectMake(0,y,w,32*u);y+=34*u;
-        _hint.text=ML(@"目前顯示備用頭像。只有已儲存的島民可供選取。",@"Portrait placeholders. Only saved islanders are listed.");_hint.frame=CGRectMake(0,y,w,32*u);y+=36*u;
+        y+=6*u;
         int cols=w>=480*u?2:1;CGFloat cw=(w-gap*(cols-1))/cols;int rows=(int)(_roster.count+cols-1)/cols;
         CGFloat visible=MAX(rowH,MIN(rows,2)*(rowH+gap)-gap);
         _rosterScroll.frame=CGRectMake(0,y,w,visible);_rosterBody.frame=CGRectMake(0,0,w,MAX(visible,rows*(rowH+gap)-gap));
         for(NSUInteger i=0;i<_targets.count;i++)_targets[i].frame=CGRectMake((i%cols)*(cw+gap),(i/cols)*(rowH+gap),cw,rowH);
         _rosterScroll.contentSize=_rosterBody.bounds.size;y+=visible+12*u;
-        if(!_roster.count&&!_message)_message=ML(@"請先建立並儲存一位可替換的島民。",@"Create and save a placeholder islander first.");
         _notice.text=_message?:(_exportMode?ML(@"匯出不會改動島上的資料。",@"Exporting does not change your island."):ML(@"只有選中的島民會被替換；匯入前會先備份。",@"Only the selected islander is replaced. A backup is made before import."));_notice.frame=CGRectMake(0,y,w,58*u);y+=64*u;
         _goBack.frame=CGRectMake(0,y,MIN(w,190*u),56*u);
     }else{
